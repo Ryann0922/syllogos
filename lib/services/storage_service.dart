@@ -76,44 +76,51 @@ class StorageService {
 
   /// Save proofs from FilePicker's PlatformFile list. Handles cases where
   /// `PlatformFile.path` may be null by falling back to `bytes` or `readStream`.
-  static Future<List<Map>> saveProofPlatformFiles(List<PlatformFile> files) async {
+  static Future<List<Map>> saveProofPlatformFiles(
+    List<PlatformFile> files,
+  ) async {
     final docDir = await getApplicationDocumentsDirectory();
     final proofs = <Map>[];
     for (final pf in files) {
       try {
+        if (pf.path == null && pf.bytes == null && pf.readStream == null) {
+          continue;
+        }
+
         final fileName = '${DateTime.now().millisecondsSinceEpoch}_${pf.name}';
         final dest = File('${docDir.path}/$fileName');
 
+        // 优先使用path
         if (pf.path != null) {
           final src = File(pf.path!);
           if (await src.exists()) {
             await src.copy(dest.path);
-          } else if (pf.bytes != null) {
-            await dest.writeAsBytes(pf.bytes!);
-          } else if (pf.readStream != null) {
-            final sink = dest.openWrite();
-            await for (final chunk in pf.readStream!) {
-              sink.add(chunk);
-            }
-            await sink.close();
-          } else {
+            proofs.add({'path': dest.path, 'name': pf.name});
             continue;
           }
-        } else if (pf.bytes != null) {
+        }
+
+        // 其次使用bytes
+        if (pf.bytes != null) {
           await dest.writeAsBytes(pf.bytes!);
-        } else if (pf.readStream != null) {
-          final sink = dest.openWrite();
-          await for (final chunk in pf.readStream!) {
-            sink.add(chunk);
-          }
-          await sink.close();
-        } else {
+          proofs.add({'path': dest.path, 'name': pf.name});
           continue;
         }
 
-        proofs.add({'path': dest.path, 'name': pf.name});
+        // 最后使用readStream
+        if (pf.readStream != null) {
+          final sink = dest.openWrite();
+          try {
+            await for (final chunk in pf.readStream!) {
+              sink.add(chunk);
+            }
+          } finally {
+            await sink.close();
+          }
+          proofs.add({'path': dest.path, 'name': pf.name});
+        }
       } catch (e) {
-        // ignore errors for now
+        print('Error saving proof file ${pf.name}: $e');
       }
     }
     return proofs;
@@ -137,7 +144,7 @@ class StorageService {
 
   static List<Map> getEntriesByClassId(String? classId) {
     final all = getAllEntries();
-    return all.where((e) => (e['classId'] ?? null) == classId).toList();
+    return all.where((e) => e['classId'] == classId).toList();
   }
 
   /// 从条目中移除证明（根据证明 path），并尝试删除文件

@@ -40,9 +40,13 @@ class _MyAppState extends State<MyApp> {
     setState(() {
       if (settings.containsKey('theme')) {
         final t = settings['theme'];
-        if (t == 'light') _themeMode = ThemeMode.light;
-        else if (t == 'dark') _themeMode = ThemeMode.dark;
-        else _themeMode = ThemeMode.system;
+        if (t == 'light') {
+          _themeMode = ThemeMode.light;
+        } else if (t == 'dark') {
+          _themeMode = ThemeMode.dark;
+        } else {
+          _themeMode = ThemeMode.system;
+        }
       }
       if (settings.containsKey('primaryColor')) {
         try {
@@ -59,10 +63,22 @@ class _MyAppState extends State<MyApp> {
     final theme = ThemeData(
       colorScheme: ColorScheme.fromSeed(seedColor: _seedColor),
       useMaterial3: true,
+      cardTheme: CardThemeData(
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+      ),
     );
     final dark = ThemeData(
       colorScheme: ColorScheme.fromSeed(seedColor: _seedColor, brightness: Brightness.dark),
       useMaterial3: true,
+      cardTheme: CardThemeData(
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+      ),
     );
 
     return MaterialApp(

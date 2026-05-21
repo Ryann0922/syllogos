@@ -1,7 +1,7 @@
 import 'dart:io';
+import 'package:dotted_border/dotted_border.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:syllogos/pages/class_detail_page.dart';
 import 'package:syllogos/pages/entry_detail_page.dart';
 import 'package:syllogos/services/storage_service.dart';
 
@@ -17,12 +17,20 @@ class _LibraryPageState extends State<LibraryPage>
   List<Map> classes = [];
   List<Map> entries = [];
   late TabController _categoryTabController;
-  List<String> _categoryTabs = []; // 动态生成的分类列表
+  List<String> _categoryTabs = [];
+
+  // 多选相关
+  bool _isMultiSelectMode = false;
+  final Set<String> _selectedEntryIds = {};
+
+  // 搜索和筛选
+  String _searchQuery = '';
+  DateTime? _filterStartDate;
+  DateTime? _filterEndDate;
 
   @override
   void initState() {
     super.initState();
-    // 先初始化空的 TabController（会在 _load 中更新）
     _categoryTabs = ['全部', '未分类'];
     _categoryTabController = TabController(length: 2, vsync: this);
     _load();
@@ -34,22 +42,42 @@ class _LibraryPageState extends State<LibraryPage>
     super.dispose();
   }
 
+  String _getClassName(String classId) {
+    try {
+      final found = classes.where((c) => c['id'].toString() == classId);
+      return found.isNotEmpty ? found.first['name'] ?? '未命名' : '分类不存在';
+    } catch (_) {
+      return '分类不存在';
+    }
+  }
+
   void _load() {
-    final newClasses = StorageService.getAllClasses();
+    var newClasses = StorageService.getAllClasses();
     entries = StorageService.getAllEntries();
 
-    // 只在类列表改变时重新创建 TabController
+    // 恢复保存的类别顺序
+    final settings = StorageService.getSettings();
+    if (settings.containsKey('classOrder')) {
+      final order = List<String>.from(settings['classOrder'] ?? []);
+      try {
+        newClasses.sort((a, b) {
+          final indexA = order.indexOf(a['id'].toString());
+          final indexB = order.indexOf(b['id'].toString());
+          if (indexA == -1) return 1;
+          if (indexB == -1) return -1;
+          return indexA.compareTo(indexB);
+        });
+      } catch (_) {}
+    }
+
     if (newClasses.length != classes.length ||
         !newClasses.asMap().entries.every(
           (e) => e.value['id'] == classes.elementAtOrNull(e.key)?['id'],
         )) {
       classes = newClasses;
-
-      // 重新生成分类标签列表
       _categoryTabs = ['全部', '未分类'];
       _categoryTabs.addAll(classes.map((c) => c['name'] ?? 'Unnamed'));
 
-      // 重新创建 TabController
       if (mounted) {
         _categoryTabController.dispose();
         _categoryTabController = TabController(
@@ -60,51 +88,103 @@ class _LibraryPageState extends State<LibraryPage>
     } else {
       classes = newClasses;
     }
-
+    _selectedEntryIds.clear();
+    _isMultiSelectMode = false;
     setState(() {});
+  }
+
+  List<Map> _getFilteredEntries() {
+    return entries.where((e) {
+      // 按名称搜索
+      if (_searchQuery.isNotEmpty) {
+        if (!(e['name'] ?? '').toLowerCase().contains(
+          _searchQuery.toLowerCase(),
+        )) {
+          return false;
+        }
+      }
+
+      // 按日期范围筛选
+      if (_filterStartDate != null || _filterEndDate != null) {
+        if (e['date'] != null) {
+          final date = DateTime.tryParse(e['date']);
+          if (date != null) {
+            if (_filterStartDate != null && date.isBefore(_filterStartDate!)) {
+              return false;
+            }
+            if (_filterEndDate != null && date.isAfter(_filterEndDate!)) {
+              return false;
+            }
+          }
+        } else {
+          if (_filterStartDate != null || _filterEndDate != null) {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    }).toList()..sort((a, b) {
+      final da = a['date'] != null ? DateTime.tryParse(a['date']) : null;
+      final db = b['date'] != null ? DateTime.tryParse(b['date']) : null;
+      if (da == null && db == null) return 0;
+      if (da == null) return 1;
+      if (db == null) return -1;
+      return db.compareTo(da);
+    });
   }
 
   Future<void> _showAddClass() async {
     final nameController = TextEditingController();
-    bool hasYearLimit = false;
-    final yearController = TextEditingController();
+    final scoreLimitController = TextEditingController();
     final targetController = TextEditingController();
+    final nameFocus = FocusNode();
+
     await showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) {
+          // 请求焦点
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            nameFocus.requestFocus();
+          });
+
           return AlertDialog(
             title: const Text('新建类'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(labelText: '名称'),
-                ),
-                Row(
-                  children: [
-                    const Text('是否有学年上限'),
-                    Checkbox(
-                      value: hasYearLimit,
-                      onChanged: (v) => setD(() => hasYearLimit = v ?? false),
-                    ),
-                  ],
-                ),
-                if (hasYearLimit)
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   TextField(
-                    controller: yearController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: '学年上限（年）'),
+                    controller: nameController,
+                    focusNode: nameFocus,
+                    autofocus: true,
+                    decoration: const InputDecoration(labelText: '名称'),
                   ),
-                TextField(
-                  controller: targetController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: scoreLimitController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: '分数上限（可选）',
+                      hintText: '到达此分数后无法添加新条目',
+                    ),
                   ),
-                  decoration: const InputDecoration(labelText: '目标分（可选）'),
-                ),
-              ],
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: targetController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: '目标分（可选）',
+                      hintText: '统计显示用，不限制添加',
+                    ),
+                  ),
+                ],
+              ),
             ),
             actions: [
               TextButton(
@@ -113,14 +193,11 @@ class _LibraryPageState extends State<LibraryPage>
               ),
               TextButton(
                 onPressed: () async {
-                  final yearLimit = hasYearLimit
-                      ? int.tryParse(yearController.text)
-                      : null;
+                  final scoreLimit = double.tryParse(scoreLimitController.text);
                   final target = double.tryParse(targetController.text);
                   await StorageService.createClass({
                     'name': nameController.text.trim(),
-                    'hasYearLimit': hasYearLimit,
-                    'yearLimit': yearLimit,
+                    'scoreLimit': scoreLimit,
                     'target': target,
                   });
                   Navigator.pop(ctx);
@@ -132,11 +209,17 @@ class _LibraryPageState extends State<LibraryPage>
           );
         },
       ),
-    );
+    ).then((_) {
+      nameController.dispose();
+      scoreLimitController.dispose();
+      targetController.dispose();
+      nameFocus.dispose();
+    });
   }
 
   Future<void> _showAddEntry() async {
     final nameController = TextEditingController();
+    final nameFocus = FocusNode();
     String? selectedClassId;
     DateTime? selectedDate;
     bool settled = false;
@@ -148,6 +231,11 @@ class _LibraryPageState extends State<LibraryPage>
       builder: (ctx) {
         return StatefulBuilder(
           builder: (c, setD) {
+            // 请求焦点
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              nameFocus.requestFocus();
+            });
+
             return AlertDialog(
               title: const Text('新建条目'),
               content: SingleChildScrollView(
@@ -156,10 +244,12 @@ class _LibraryPageState extends State<LibraryPage>
                   children: [
                     TextField(
                       controller: nameController,
+                      focusNode: nameFocus,
+                      autofocus: true,
                       decoration: const InputDecoration(labelText: '名称'),
                     ),
                     DropdownButtonFormField<String?>(
-                      value: selectedClassId,
+                      initialValue: selectedClassId,
                       decoration: const InputDecoration(
                         labelText: '所属类（不选为未分类）',
                       ),
@@ -179,15 +269,15 @@ class _LibraryPageState extends State<LibraryPage>
                         Expanded(
                           child: Text(
                             selectedDate != null
-                                ? '${selectedDate!.year}-${selectedDate!.month}-${selectedDate!.day}'
-                                : '未选择日期',
+                                ? '${selectedDate!.year}-${selectedDate!.month.toString().padLeft(2, '0')}-${selectedDate!.day.toString().padLeft(2, '0')}'
+                                : '无日期（可选）',
                           ),
                         ),
                         TextButton(
                           onPressed: () async {
                             final d = await showDatePicker(
                               context: context,
-                              initialDate: DateTime.now(),
+                              initialDate: selectedDate ?? DateTime.now(),
                               firstDate: DateTime(1970),
                               lastDate: DateTime(2100),
                             );
@@ -210,15 +300,18 @@ class _LibraryPageState extends State<LibraryPage>
                       children: [
                         ElevatedButton(
                           onPressed: () async {
-                            final result = await FilePicker.platform.pickFiles(
-                              allowMultiple: true,
-                            );
-                            if (result != null && result.files.isNotEmpty) {
-                              final saved =
-                                  await StorageService.saveProofPlatformFiles(
-                                    result.files,
-                                  );
-                              setD(() => proofs.addAll(saved));
+                            try {
+                              final result = await FilePicker.platform
+                                  .pickFiles(allowMultiple: true);
+                              if (result != null && result.files.isNotEmpty) {
+                                final saved =
+                                    await StorageService.saveProofPlatformFiles(
+                                      result.files,
+                                    );
+                                setD(() => proofs.addAll(saved));
+                              }
+                            } catch (e) {
+                              print('Error picking files: $e');
                             }
                           },
                           child: const Text('选择证明文件'),
@@ -227,6 +320,29 @@ class _LibraryPageState extends State<LibraryPage>
                         Text('已选 ${proofs.length} 个'),
                       ],
                     ),
+                    if (proofs.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: proofs.asMap().entries.map((e) {
+                          final idx = e.key;
+                          final p = e.value;
+                          final path = p['path']?.toString() ?? '';
+                          final fileName = path.split('/').last;
+                          return Chip(
+                            label: Text(
+                              fileName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onDeleted: () {
+                              setD(() => proofs.removeAt(idx));
+                            },
+                          );
+                        }).toList(),
+                      ),
+                    ],
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -247,8 +363,54 @@ class _LibraryPageState extends State<LibraryPage>
                 ),
                 TextButton(
                   onPressed: () async {
-                    if (nameController.text.trim().isEmpty) return;
+                    final trimmedName = nameController.text.trim();
+                    if (trimmedName.isEmpty) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(content: Text('请输入条目名称')),
+                      );
+                      return;
+                    }
                     final score = double.tryParse(scoreController.text);
+
+                    // 检查分数上限
+                    if (selectedClassId != null) {
+                      final selectedClass = classes.firstWhere(
+                        (c) => c['id'].toString() == selectedClassId,
+                        orElse: () => {},
+                      );
+                      if (selectedClass.isNotEmpty &&
+                          selectedClass['scoreLimit'] != null) {
+                        final scoreLimit = (selectedClass['scoreLimit'] as num)
+                            .toDouble();
+                        // 计算该类当前总分
+                        final classEntries = entries
+                            .where(
+                              (e) => e['classId'].toString() == selectedClassId,
+                            )
+                            .toList();
+                        double currentSum = 0;
+                        for (final e in classEntries) {
+                          final s = (e['score'] is num)
+                              ? (e['score'] as num).toDouble()
+                              : double.tryParse(e['score']?.toString() ?? '') ??
+                                    0.0;
+                          currentSum += s;
+                        }
+                        final newSum = currentSum + (score ?? 0);
+                        if (newSum > scoreLimit) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                '该类的分数已达上限 $scoreLimit。当前: $currentSum，新增: ${score ?? 0}，总计: $newSum',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+                      }
+                    }
+
                     final data = {
                       'name': nameController.text.trim(),
                       'classId': selectedClassId,
@@ -268,62 +430,528 @@ class _LibraryPageState extends State<LibraryPage>
           },
         );
       },
+    ).then((_) {
+      nameController.dispose();
+      scoreController.dispose();
+      nameFocus.dispose();
+    });
+  }
+
+  Future<void> _showFilterDialog() async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (c, setD) => AlertDialog(
+          title: const Text('筛选条件'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('按日期范围筛选'),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _filterStartDate != null
+                            ? '从 ${_filterStartDate!.toString().split(' ').first}'
+                            : '从 (未设置)',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        final d = await showDatePicker(
+                          context: context,
+                          initialDate: _filterStartDate ?? DateTime.now(),
+                          firstDate: DateTime(1970),
+                          lastDate: DateTime(2100),
+                        );
+                        if (d != null) {
+                          setD(() => _filterStartDate = d);
+                          setState(() {});
+                        }
+                      },
+                      child: const Text('设置'),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _filterEndDate != null
+                            ? '至 ${_filterEndDate!.toString().split(' ').first}'
+                            : '至 (未设置)',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        final d = await showDatePicker(
+                          context: context,
+                          initialDate: _filterEndDate ?? DateTime.now(),
+                          firstDate: DateTime(1970),
+                          lastDate: DateTime(2100),
+                        );
+                        if (d != null) {
+                          setD(() => _filterEndDate = d);
+                          setState(() {});
+                        }
+                      },
+                      child: const Text('设置'),
+                    ),
+                  ],
+                ),
+                if (_filterStartDate != null || _filterEndDate != null)
+                  TextButton(
+                    onPressed: () {
+                      setD(() {
+                        _filterStartDate = null;
+                        _filterEndDate = null;
+                      });
+                      setState(() {});
+                    },
+                    child: const Text('清除日期筛选'),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('关闭'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showSelectModeDialog() async {
+    final cs = Theme.of(context).colorScheme;
+
+    await showModalBottomSheet(
+      context: context,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          spacing: 16,
+          children: [
+            // 标题
+            Text(
+              '选择模式',
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+
+            // Select 按钮
+            GestureDetector(
+              onTap: () {
+                Navigator.pop(ctx);
+                setState(() => _isMultiSelectMode = true);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 20,
+                ),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: cs.outlineVariant,
+                    width: 2,
+                    strokeAlign: BorderSide.strokeAlignOutside,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: cs.outline,
+                          width: 2,
+                          strokeAlign: BorderSide.strokeAlignCenter,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: DottedBorder(
+                        color: cs.outline,
+                        strokeWidth: 2,
+                        dashPattern: const [4, 4],
+                        radius: const Radius.circular(8),
+                        child: const Center(
+                          child: Icon(Icons.check_box_outline_blank, size: 32),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Select',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: cs.onSurface,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Select All 按钮
+            GestureDetector(
+              onTap: () {
+                Navigator.pop(ctx);
+                setState(() {
+                  _isMultiSelectMode = true;
+                  final currentList = _getFilteredEntries();
+                  _selectedEntryIds.addAll(
+                    currentList.map((e) => e['id'].toString()),
+                  );
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 20,
+                ),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: cs.outlineVariant,
+                    width: 2,
+                    strokeAlign: BorderSide.strokeAlignOutside,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: cs.outline,
+                          width: 2,
+                          strokeAlign: BorderSide.strokeAlignCenter,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: DottedBorder(
+                        color: cs.outline,
+                        strokeWidth: 2,
+                        dashPattern: const [4, 4],
+                        radius: const Radius.circular(8),
+                        child: Center(
+                          child: Container(
+                            width: 24,
+                            height: 24,
+                            decoration: BoxDecoration(
+                              border: Border.all(color: cs.outline, width: 1.5),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Center(
+                              child: Icon(
+                                Icons.add,
+                                size: 16,
+                                color: cs.outline,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Select All',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: cs.onSurface,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showReorderCategoryMenu(int tabIndex) async {
+    // 跳过"全部"和"未分类"这两个特殊tab
+    if (tabIndex < 2) return;
+
+    final classIndex = tabIndex - 2;
+    final canMoveUp = classIndex > 0;
+    final canMoveDown = classIndex < classes.length - 1;
+
+    await showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (canMoveUp)
+              ListTile(
+                leading: const Icon(Icons.arrow_upward),
+                title: const Text('向上移动'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _swapClasses(classIndex, classIndex - 1);
+                },
+              ),
+            if (canMoveDown)
+              ListTile(
+                leading: const Icon(Icons.arrow_downward),
+                title: const Text('向下移动'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _swapClasses(classIndex, classIndex + 1);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.close),
+              title: const Text('取消'),
+              onTap: () => Navigator.pop(ctx),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _swapClasses(int indexA, int indexB) {
+    // 交换两个类的位置
+    final temp = classes[indexA];
+    classes[indexA] = classes[indexB];
+    classes[indexB] = temp;
+
+    // 保存新的顺序
+    final order = classes.map((c) => c['id'].toString()).toList();
+    StorageService.saveSetting('classOrder', order);
+
+    // 更新标签
+    _categoryTabs = ['全部', '未分类'];
+    _categoryTabs.addAll(classes.map((c) => c['name'] ?? 'Unnamed'));
+
+    // 保持当前选中的tab
+    final currentTab = _categoryTabController.index;
+    _categoryTabController.dispose();
+    _categoryTabController = TabController(
+      length: _categoryTabs.length,
+      vsync: this,
+      initialIndex: currentTab,
+    );
+
+    setState(() {});
+  }
+
+  Future<void> _batchDelete() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认删除'),
+        content: Text('确定要删除选中的 ${_selectedEntryIds.length} 个条目吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      for (final id in _selectedEntryIds) {
+        await StorageService.deleteEntry(id);
+      }
+      _load();
+    }
+  }
+
+  Future<void> _batchChangeClass() async {
+    String? newClassId;
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (c, setD) => AlertDialog(
+          title: const Text('调整类别'),
+          content: DropdownButtonFormField<String?>(
+            initialValue: newClassId,
+            decoration: const InputDecoration(labelText: '新所属类'),
+            items: [
+              const DropdownMenuItem(value: null, child: Text('未分类')),
+              ...classes.map(
+                (c) => DropdownMenuItem(
+                  value: c['id'].toString(),
+                  child: Text(c['name'] ?? 'Unnamed'),
+                ),
+              ),
+            ],
+            onChanged: (v) => setD(() => newClassId = v),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () async {
+                for (final id in _selectedEntryIds) {
+                  final entry = entries
+                      .where((e) => e['id'].toString() == id)
+                      .toList();
+                  if (entry.isNotEmpty) {
+                    final data = Map.from(entry.first);
+                    data['classId'] = newClassId;
+                    await StorageService.updateEntry(id, data);
+                  }
+                }
+                Navigator.pop(ctx);
+                _load();
+              },
+              child: const Text('确认'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final filteredEntries = _getFilteredEntries();
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('库'),
+        title: _isMultiSelectMode
+            ? Text('已选 ${_selectedEntryIds.length} 个')
+            : const Text('库'),
         elevation: 0,
+        actions: _isMultiSelectMode
+            ? [
+                if (_selectedEntryIds.isNotEmpty)
+                  PopupMenuButton<String>(
+                    onSelected: (value) async {
+                      if (value == 'delete') {
+                        await _batchDelete();
+                      } else if (value == 'changeClass') {
+                        await _batchChangeClass();
+                      }
+                    },
+                    itemBuilder: (BuildContext context) => [
+                      const PopupMenuItem(
+                        value: 'changeClass',
+                        child: Text('更改类别'),
+                      ),
+                      const PopupMenuItem(value: 'delete', child: Text('删除')),
+                    ],
+                  ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () {
+                    setState(() {
+                      _isMultiSelectMode = false;
+                      _selectedEntryIds.clear();
+                    });
+                  },
+                ),
+              ]
+            : [
+                IconButton(
+                  icon: const Icon(Icons.checklist),
+                  tooltip: '选择模式',
+                  onPressed: _showSelectModeDialog,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.tune),
+                  tooltip: '筛选',
+                  onPressed: _showFilterDialog,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.search),
+                  tooltip: '搜索',
+                  onPressed: () {
+                    final focusNode = FocusNode();
+                    showDialog(
+                      context: context,
+                      builder: (ctx) => StatefulBuilder(
+                        builder: (c, setD) => AlertDialog(
+                          title: const Text('搜索条目'),
+                          content: TextField(
+                            focusNode: focusNode,
+                            autofocus: true,
+                            decoration: const InputDecoration(
+                              labelText: '输入条目名称',
+                              hintText: '输入要搜索的条目名称',
+                            ),
+                            onChanged: (v) {
+                              setState(() => _searchQuery = v);
+                            },
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text('关闭'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ).then((_) => focusNode.dispose());
+                  },
+                ),
+              ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),
           child: TabBar(
             controller: _categoryTabController,
-            tabs: _categoryTabs.map((cat) => Tab(text: cat)).toList(),
+            tabs: List.generate(_categoryTabs.length, (idx) {
+              return GestureDetector(
+                onLongPress: _categoryTabs.length > 1
+                    ? () {
+                        _showReorderCategoryMenu(idx);
+                      }
+                    : null,
+                child: Tab(text: _categoryTabs[idx]),
+              );
+            }),
             isScrollable: true,
             indicatorColor: cs.primary,
             labelColor: cs.primary,
             unselectedLabelColor: cs.onSurfaceVariant,
+            tabAlignment: TabAlignment.center,
           ),
         ),
       ),
       body: TabBarView(
         controller: _categoryTabController,
         children: List.generate(_categoryTabs.length, (tabIndex) {
-          // 根据 tabIndex 确定要显示的分类
-          final list =
-              entries.where((e) {
-                if (tabIndex == 0) {
-                  // '全部' 标签页
-                  return true;
-                } else if (tabIndex == 1) {
-                  // '未分类' 标签页
-                  return e['classId'] == null;
-                } else {
-                  // 类别标签页：tabIndex - 2 对应到 classes 数组
-                  final classIndex = tabIndex - 2;
-                  if (classIndex < classes.length) {
-                    return e['classId']?.toString() ==
-                        classes[classIndex]['id'].toString();
-                  }
-                  return false;
-                }
-              }).toList()..sort((a, b) {
-                final da = a['date'] != null
-                    ? DateTime.tryParse(a['date'])
-                    : null;
-                final db = b['date'] != null
-                    ? DateTime.tryParse(b['date'])
-                    : null;
-                if (da == null && db == null) return 0;
-                if (da == null) return 1;
-                if (db == null) return -1;
-                return db.compareTo(da);
-              });
+          final list = filteredEntries.where((e) {
+            if (tabIndex == 0) {
+              return true;
+            } else if (tabIndex == 1) {
+              return e['classId'] == null;
+            } else {
+              final classIndex = tabIndex - 2;
+              if (classIndex < classes.length) {
+                return e['classId']?.toString() ==
+                    classes[classIndex]['id'].toString();
+              }
+              return false;
+            }
+          }).toList();
 
           if (list.isEmpty) {
             return const Center(child: Text('暂无条目'));
@@ -334,6 +962,9 @@ class _LibraryPageState extends State<LibraryPage>
             itemCount: list.length,
             itemBuilder: (ctx, i) {
               final item = list[i];
+              final isSelected = _selectedEntryIds.contains(
+                item['id'].toString(),
+              );
               final proofs = List<Map>.from(item['proofs'] ?? []);
               String? thumbPath;
               if (proofs.isNotEmpty) {
@@ -350,25 +981,68 @@ class _LibraryPageState extends State<LibraryPage>
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: GestureDetector(
-                  onTap: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            EntryDetailPage(entryId: item['id'].toString()),
-                      ),
-                    );
-                    _load();
-                  },
+                  onTap: _isMultiSelectMode
+                      ? () {
+                          setState(() {
+                            if (isSelected) {
+                              _selectedEntryIds.remove(item['id'].toString());
+                            } else {
+                              _selectedEntryIds.add(item['id'].toString());
+                            }
+                          });
+                        }
+                      : () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => EntryDetailPage(
+                                entryId: item['id'].toString(),
+                              ),
+                            ),
+                          );
+                          _load();
+                        },
+                  onLongPress: !_isMultiSelectMode
+                      ? () {
+                          setState(() {
+                            _isMultiSelectMode = true;
+                            _selectedEntryIds.add(item['id'].toString());
+                          });
+                        }
+                      : null,
                   child: Card(
                     elevation: 0,
-                    color: cs.surfaceContainerLow,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    color: isSelected
+                        ? cs.primaryContainer
+                        : cs.surfaceContainerLow,
                     child: Padding(
-                      padding: const EdgeInsets.all(12.0),
+                      padding: const EdgeInsets.all(14.0),
                       child: Row(
                         children: [
+                          if (_isMultiSelectMode)
+                            Checkbox(
+                              value: isSelected,
+                              onChanged: (v) {
+                                setState(() {
+                                  if (v == true) {
+                                    _selectedEntryIds.add(
+                                      item['id'].toString(),
+                                    );
+                                  } else {
+                                    _selectedEntryIds.remove(
+                                      item['id'].toString(),
+                                    );
+                                  }
+                                });
+                              },
+                            )
+                          else
+                            const SizedBox.shrink(),
                           ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(12),
                             child: Container(
                               width: 64,
                               height: 64,
@@ -400,7 +1074,7 @@ class _LibraryPageState extends State<LibraryPage>
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  '${item['date'] != null ? (DateTime.tryParse(item['date'])?.toString().split(' ').first ?? '') : '无日期'}${item['score'] != null ? ' · ${item['score']} 分' : ''}',
+                                  '${item['date'] != null ? (DateTime.tryParse(item['date'])?.toString().split(' ').first ?? '') : '无日期'}${item['score'] != null ? ' · ${item['score']}分' : ''}${item['classId'] != null ? ' · ${_getClassName(item['classId'].toString())}' : ''}',
                                   style: Theme.of(context).textTheme.labelSmall
                                       ?.copyWith(color: cs.onSurfaceVariant),
                                   maxLines: 1,

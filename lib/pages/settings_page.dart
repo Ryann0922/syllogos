@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:syllogos/pages/class_management_page.dart';
 import 'package:syllogos/services/export_service.dart';
 import 'package:syllogos/services/storage_service.dart';
 import 'package:syllogos/services/webdav_service.dart';
@@ -14,7 +15,7 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   int startMonth = 9;
   String themeMode = 'system';
-  int primaryColorValue = Colors.indigo.value;
+  int primaryColorValue = 0xFF3F51B5; // Colors.indigo
   // WebDAV settings
   String webdavUrl = '';
   String webdavUser = '';
@@ -31,8 +32,9 @@ class _SettingsPageState extends State<SettingsPage> {
     if (s.containsKey('webdavUrl')) webdavUrl = s['webdavUrl'];
     if (s.containsKey('webdavUser')) webdavUser = s['webdavUser'];
     if (s.containsKey('webdavPass')) webdavPass = s['webdavPass'];
-    if (s.containsKey('webdavRemotePath'))
+    if (s.containsKey('webdavRemotePath')) {
       webdavRemotePath = s['webdavRemotePath'];
+    }
   }
 
   Future<void> _export() async {
@@ -146,10 +148,10 @@ class _SettingsPageState extends State<SettingsPage> {
                   mainAxisSpacing: 8,
                   crossAxisSpacing: 8,
                   children: predefinedColors.entries.map((e) {
-                    final isSelected = temp == e.value.value;
+                    final isSelected = temp == e.value.toARGB32();
                     return GestureDetector(
                       onTap: () {
-                        Navigator.pop(ctx, e.value.value);
+                        Navigator.pop(ctx, e.value.toARGB32());
                       },
                       child: Container(
                         decoration: BoxDecoration(
@@ -190,8 +192,8 @@ class _SettingsPageState extends State<SettingsPage> {
             if (corePalette != null) {
               // 从系统色盘提取主色
               final dynamicColor = Color(corePalette.primary.get(80));
-              setState(() => primaryColorValue = dynamicColor.value);
-              StorageService.saveSetting('primaryColor', dynamicColor.value);
+              setState(() => primaryColorValue = dynamicColor.toARGB32());
+              StorageService.saveSetting('primaryColor', dynamicColor.toARGB32());
               ScaffoldMessenger.of(
                 context,
               ).showSnackBar(const SnackBar(content: Text('已应用系统动态取色')));
@@ -358,31 +360,28 @@ class _SettingsPageState extends State<SettingsPage> {
                                 title: const Text('选择主题'),
                                 content: StatefulBuilder(
                                   builder: (c, s) {
-                                    return Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        RadioListTile(
-                                          value: 'system',
-                                          groupValue: temp,
-                                          title: const Text('跟随系统'),
-                                          onChanged: (v) =>
-                                              s(() => temp = v as String),
-                                        ),
-                                        RadioListTile(
-                                          value: 'light',
-                                          groupValue: temp,
-                                          title: const Text('亮色'),
-                                          onChanged: (v) =>
-                                              s(() => temp = v as String),
-                                        ),
-                                        RadioListTile(
-                                          value: 'dark',
-                                          groupValue: temp,
-                                          title: const Text('暗色'),
-                                          onChanged: (v) =>
-                                              s(() => temp = v as String),
-                                        ),
-                                      ],
+                                    return RadioGroup<String>(
+                                      groupValue: temp,
+                                      onChanged: (v) {
+                                        if (v != null) s(() => temp = v);
+                                      },
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: const [
+                                          RadioListTile(
+                                            value: 'system',
+                                            title: Text('跟随系统'),
+                                          ),
+                                          RadioListTile(
+                                            value: 'light',
+                                            title: Text('亮色'),
+                                          ),
+                                          RadioListTile(
+                                            value: 'dark',
+                                            title: Text('暗色'),
+                                          ),
+                                        ],
+                                      ),
                                     );
                                   },
                                 ),
@@ -464,6 +463,19 @@ class _SettingsPageState extends State<SettingsPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   FilledButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ClassManagementPage(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.category),
+                    label: const Text('编辑分类'),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.icon(
                     onPressed: _export,
                     icon: const Icon(Icons.download),
                     label: const Text('导出数据（ZIP）'),
@@ -482,9 +494,12 @@ class _SettingsPageState extends State<SettingsPage> {
                       final fileName = f.uri.pathSegments.last;
                       var base = webdavUrl.trim();
                       var remote = webdavRemotePath.trim();
-                      if (base.endsWith('/'))
+                      if (base.endsWith('/')) {
                         base = base.substring(0, base.length - 1);
-                      if (!remote.startsWith('/')) remote = '/$remote';
+                      }
+                      if (!remote.startsWith('/')) {
+                        remote = '/$remote';
+                      }
                       if (!remote.endsWith('/')) remote = '$remote/';
                       final full = '$base$remote$fileName';
                       final ok = await WebDavService.uploadFile(

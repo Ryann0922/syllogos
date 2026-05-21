@@ -53,21 +53,32 @@ class _StatsPageState extends State<StatsPage> {
         'sum': 0.0,
         'avg': 0.0,
         'target': c['target'],
+        'scoreLimit': c['scoreLimit'],
       };
     }
     // Uncategorized key
-    stats['__uncat'] = {'count': 0, 'sum': 0.0, 'avg': 0.0, 'target': null};
+    stats['__uncat'] = {
+      'count': 0,
+      'sum': 0.0,
+      'avg': 0.0,
+      'target': null,
+      'scoreLimit': null,
+    };
 
     for (final e in entries) {
-      if (e['date'] == null) continue;
-      DateTime dt;
-      try {
-        dt = DateTime.parse(e['date']);
-      } catch (ex) {
-        continue;
+      // 检查日期是否在学年范围内（无日期条目仍计入统计）
+      if (e['date'] != null) {
+        DateTime dt;
+        try {
+          dt = DateTime.parse(e['date']);
+          if (yearRange != null &&
+              (dt.isBefore(yearRange!.start) || dt.isAfter(yearRange!.end))) {
+            continue;
+          }
+        } catch (_) {
+          continue;
+        }
       }
-      if (yearRange == null) continue;
-      if (dt.isBefore(yearRange!.start) || dt.isAfter(yearRange!.end)) continue;
       final cid = e['classId'] ?? '__uncat';
       final key = cid == null || cid == '' ? '__uncat' : cid.toString();
       final sc = (e['score'] is num)
@@ -75,7 +86,13 @@ class _StatsPageState extends State<StatsPage> {
           : double.tryParse(e['score']?.toString() ?? '') ?? 0.0;
       final m = stats.putIfAbsent(
         key,
-        () => {'count': 0, 'sum': 0.0, 'avg': 0.0, 'target': null},
+        () => {
+          'count': 0,
+          'sum': 0.0,
+          'avg': 0.0,
+          'target': null,
+          'scoreLimit': null,
+        },
       );
       m['count'] = (m['count'] as int) + 1;
       m['sum'] = (m['sum'] as double) + sc;
@@ -155,10 +172,14 @@ class _StatsPageState extends State<StatsPage> {
                           'sum': 0.0,
                           'avg': 0.0,
                           'target': c['target'],
+                          'scoreLimit': c['scoreLimit'],
                         };
                     final met = (m['target'] != null)
                         ? (m['sum'] as double) >= (m['target'] as num)
                         : null;
+                    final scoreLimitReached = (m['scoreLimit'] != null)
+                        ? (m['sum'] as double) >= (m['scoreLimit'] as num)
+                        : false;
                     final progress =
                         (m['target'] != null && (m['target'] as num) > 0)
                         ? ((m['sum'] as double) / (m['target'] as num)).clamp(
@@ -171,7 +192,9 @@ class _StatsPageState extends State<StatsPage> {
                       padding: const EdgeInsets.only(bottom: 12.0),
                       child: Card(
                         elevation: 0,
-                        color: cs.surfaceContainerHighest,
+                        color: scoreLimitReached
+                            ? cs.errorContainer.withValues(alpha: 0.3)
+                            : cs.surfaceContainerHighest,
                         child: Padding(
                           padding: const EdgeInsets.all(16.0),
                           child: Column(
@@ -192,7 +215,37 @@ class _StatsPageState extends State<StatsPage> {
                                           ),
                                     ),
                                   ),
-                                  if (met != null)
+                                  if (scoreLimitReached)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: cs.error,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.warning_amber,
+                                            color: cs.onError,
+                                            size: 16,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '已达上限',
+                                            style: TextStyle(
+                                              color: cs.onError,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  else if (met != null)
                                     Container(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 12,
@@ -267,14 +320,48 @@ class _StatsPageState extends State<StatsPage> {
                                   ),
                                 ],
                               ),
+                              if (m['scoreLimit'] != null) ...[
+                                const SizedBox(height: 8),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      '分数上限: ${m['scoreLimit']}',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.copyWith(
+                                            color: scoreLimitReached
+                                                ? cs.error
+                                                : cs.onSurfaceVariant,
+                                            fontWeight: scoreLimitReached
+                                                ? FontWeight.w600
+                                                : FontWeight.normal,
+                                          ),
+                                    ),
+                                    if (scoreLimitReached)
+                                      Text(
+                                        '(已达上限)',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelSmall
+                                            ?.copyWith(
+                                              color: cs.error,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
+                                  ],
+                                ),
+                              ],
                               if (m['target'] != null &&
                                   (m['target'] as num) > 0) ...[
                                 const SizedBox(height: 12),
                                 ClipRRect(
-                                  borderRadius: BorderRadius.circular(4),
+                                  borderRadius: BorderRadius.circular(8),
                                   child: LinearProgressIndicator(
                                     value: progress,
-                                    minHeight: 6,
+                                    minHeight: 8,
                                     backgroundColor: cs.surfaceContainerLow,
                                     valueColor: AlwaysStoppedAnimation<Color>(
                                       progress >= 0.95
@@ -289,7 +376,7 @@ class _StatsPageState extends State<StatsPage> {
                         ),
                       ),
                     );
-                  }).toList(),
+                  }),
                   Builder(
                     builder: (_) {
                       final m =

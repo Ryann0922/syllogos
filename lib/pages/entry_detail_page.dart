@@ -125,23 +125,32 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: DropdownButtonFormField<String?>(
-                          initialValue: selectedClassId,
-                          decoration: const InputDecoration(labelText: '所属类'),
-                          items: [
-                            const DropdownMenuItem(
-                              value: null,
-                              child: Text('未分类'),
-                            ),
-                            ...classes.map(
-                              (c) => DropdownMenuItem(
-                                value: c['id'].toString(),
-                                child: Text(c['name'] ?? 'Unnamed'),
-                              ),
-                            ),
-                          ],
-                          onChanged: (v) => setD(() => selectedClassId = v),
+                        child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: '所属类',
+                          border: OutlineInputBorder(),
                         ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String?>(
+                            value: selectedClassId,
+                            isExpanded: true,
+                            isDense: true,
+                            items: [
+                              const DropdownMenuItem(
+                                value: null,
+                                child: Text('未分类'),
+                              ),
+                              ...classes.map(
+                                (c) => DropdownMenuItem(
+                                  value: c['id'].toString(),
+                                  child: Text(c['name'] ?? 'Unnamed'),
+                                ),
+                              ),
+                            ],
+                            onChanged: (v) => setD(() => selectedClassId = v),
+                          ),
+                        ),
+                      ),
                       ),
                     ],
                   ),
@@ -237,77 +246,85 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
               ),
               TextButton(
                 onPressed: () async {
-                  final trimmedName = nameCtrl.text.trim();
-                  if (trimmedName.isEmpty) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      const SnackBar(content: Text('请输入条目名称')),
-                    );
-                    return;
-                  }
-                  final oldScore = (entry!['score'] is num)
-                      ? (entry!['score'] as num).toDouble()
-                      : double.tryParse(entry!['score']?.toString() ?? '') ??
-                            0.0;
-                  final newScore = double.tryParse(scoreCtrl.text) ?? 0.0;
-                  final scoreDiff = newScore - oldScore;
+                  try {
+                    final trimmedName = nameCtrl.text.trim();
+                    if (trimmedName.isEmpty) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(content: Text('请输入条目名称')),
+                      );
+                      return;
+                    }
+                    final oldScore = (entry!['score'] is num)
+                        ? (entry!['score'] as num).toDouble()
+                        : double.tryParse(entry!['score']?.toString() ?? '') ??
+                              0.0;
+                    final newScore = double.tryParse(scoreCtrl.text) ?? 0.0;
+                    final scoreDiff = newScore - oldScore;
 
-                  // 检查分数上限（仅当改变分数或改变所属类时）
-                  if (selectedClassId != null &&
-                      (scoreDiff != 0 ||
-                          selectedClassId.toString() !=
-                              entry!['classId'].toString())) {
-                    final selectedClass = classes.firstWhere(
-                      (c) => c['id'].toString() == selectedClassId,
-                      orElse: () => {},
-                    );
-                    if (selectedClass.isNotEmpty &&
-                        selectedClass['scoreLimit'] != null) {
-                      final scoreLimit = (selectedClass['scoreLimit'] as num)
-                          .toDouble();
+                    // 检查分数上限（仅当改变分数或改变所属类时）
+                    if (selectedClassId != null &&
+                        (scoreDiff != 0 ||
+                            selectedClassId.toString() !=
+                                entry!['classId'].toString())) {
+                      final selectedClass = classes.firstWhere(
+                        (c) => c['id'].toString() == selectedClassId,
+                        orElse: () => {},
+                      );
+                      if (selectedClass.isNotEmpty &&
+                          selectedClass['scoreLimit'] != null) {
+                        final scoreLimit = (selectedClass['scoreLimit'] as num)
+                            .toDouble();
 
-                      // 计算该类的其他条目的总分（不含当前条目）
-                      final allEntries = StorageService.getAllEntries();
-                      final classEntries = allEntries
-                          .where(
-                            (e) =>
-                                e['classId'].toString() == selectedClassId &&
-                                e['id'].toString() != widget.entryId,
-                          )
-                          .toList();
-                      double currentSum = 0;
-                      for (final e in classEntries) {
-                        final s = (e['score'] is num)
-                            ? (e['score'] as num).toDouble()
-                            : double.tryParse(e['score']?.toString() ?? '') ??
-                                  0.0;
-                        currentSum += s;
-                      }
-                      final newSum = currentSum + newScore;
-                      if (newSum > scoreLimit) {
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              '该类的分数将超过上限 $scoreLimit。当前: $currentSum，新分数: $newScore，总计: $newSum',
+                        // 计算该类的其他条目的总分（不含当前条目）
+                        final allEntries = StorageService.getAllEntries();
+                        final classEntries = allEntries
+                            .where(
+                              (e) =>
+                                  e['classId'].toString() == selectedClassId &&
+                                  e['id'].toString() != widget.entryId,
+                            )
+                            .toList();
+                        double currentSum = 0;
+                        for (final e in classEntries) {
+                          final s = (e['score'] is num)
+                              ? (e['score'] as num).toDouble()
+                              : double.tryParse(e['score']?.toString() ?? '') ??
+                                      0.0;
+                          currentSum += s;
+                        }
+                        final newSum = currentSum + newScore;
+                        if (newSum > scoreLimit) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                '该类的分数将超过上限 $scoreLimit。当前: $currentSum，新分数: $newScore，总计: $newSum',
+                              ),
                             ),
-                          ),
-                        );
-                        return;
+                          );
+                          return;
+                        }
                       }
                     }
-                  }
 
-                  final data = {
-                    'name': nameCtrl.text.trim(),
-                    'classId': selectedClassId,
-                    'date': selectedDate?.toIso8601String(),
-                    'proofs': proofs,
-                    'settled': settled,
-                    'score': double.tryParse(scoreCtrl.text),
-                  };
-                  await StorageService.updateEntry(widget.entryId, data);
-                  Navigator.pop(ctx);
-                  _load();
+                    final data = {
+                      'name': trimmedName,
+                      'classId': selectedClassId,
+                      'date': selectedDate?.toIso8601String(),
+                      'proofs': proofs,
+                      'settled': settled,
+                      'score': double.tryParse(scoreCtrl.text),
+                    };
+                    await StorageService.updateEntry(widget.entryId, data);
+                    if (!ctx.mounted) return;
+                    Navigator.pop(ctx);
+                    _load();
+                  } catch (e) {
+                    if (ctx.mounted) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        SnackBar(content: Text('保存失败: $e')),
+                      );
+                    }
+                  }
                 },
                 child: const Text('保存'),
               ),

@@ -248,21 +248,28 @@ class _LibraryPageState extends State<LibraryPage>
                       autofocus: true,
                       decoration: const InputDecoration(labelText: '名称'),
                     ),
-                    DropdownButtonFormField<String?>(
-                      initialValue: selectedClassId,
+                    InputDecorator(
                       decoration: const InputDecoration(
                         labelText: '所属类（不选为未分类）',
+                        border: OutlineInputBorder(),
                       ),
-                      items: [
-                        const DropdownMenuItem(value: null, child: Text('未分类')),
-                        ...classes.map(
-                          (c) => DropdownMenuItem(
-                            value: c['id'].toString(),
-                            child: Text(c['name'] ?? 'Unnamed'),
-                          ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String?>(
+                          value: selectedClassId,
+                          isExpanded: true,
+                          isDense: true,
+                          items: [
+                            const DropdownMenuItem(value: null, child: Text('未分类')),
+                            ...classes.map(
+                              (c) => DropdownMenuItem(
+                                value: c['id'].toString(),
+                                child: Text(c['name'] ?? 'Unnamed'),
+                              ),
+                            ),
+                          ],
+                          onChanged: (v) => setD(() => selectedClassId = v),
                         ),
-                      ],
-                      onChanged: (v) => setD(() => selectedClassId = v),
+                      ),
                     ),
                     Row(
                       children: [
@@ -363,65 +370,73 @@ class _LibraryPageState extends State<LibraryPage>
                 ),
                 TextButton(
                   onPressed: () async {
-                    final trimmedName = nameController.text.trim();
-                    if (trimmedName.isEmpty) {
-                      ScaffoldMessenger.of(ctx).showSnackBar(
-                        const SnackBar(content: Text('请输入条目名称')),
-                      );
-                      return;
-                    }
-                    final score = double.tryParse(scoreController.text);
+                    try {
+                      final trimmedName = nameController.text.trim();
+                      if (trimmedName.isEmpty) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          const SnackBar(content: Text('请输入条目名称')),
+                        );
+                        return;
+                      }
+                      final score = double.tryParse(scoreController.text);
 
-                    // 检查分数上限
-                    if (selectedClassId != null) {
-                      final selectedClass = classes.firstWhere(
-                        (c) => c['id'].toString() == selectedClassId,
-                        orElse: () => {},
-                      );
-                      if (selectedClass.isNotEmpty &&
-                          selectedClass['scoreLimit'] != null) {
-                        final scoreLimit = (selectedClass['scoreLimit'] as num)
-                            .toDouble();
-                        // 计算该类当前总分
-                        final classEntries = entries
-                            .where(
-                              (e) => e['classId'].toString() == selectedClassId,
-                            )
-                            .toList();
-                        double currentSum = 0;
-                        for (final e in classEntries) {
-                          final s = (e['score'] is num)
-                              ? (e['score'] as num).toDouble()
-                              : double.tryParse(e['score']?.toString() ?? '') ??
-                                    0.0;
-                          currentSum += s;
-                        }
-                        final newSum = currentSum + (score ?? 0);
-                        if (newSum > scoreLimit) {
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                '该类的分数已达上限 $scoreLimit。当前: $currentSum，新增: ${score ?? 0}，总计: $newSum',
+                      // 检查分数上限
+                      if (selectedClassId != null) {
+                        final selectedClass = classes.firstWhere(
+                          (c) => c['id'].toString() == selectedClassId,
+                          orElse: () => {},
+                        );
+                        if (selectedClass.isNotEmpty &&
+                            selectedClass['scoreLimit'] != null) {
+                          final scoreLimit = (selectedClass['scoreLimit'] as num)
+                              .toDouble();
+                          final classEntries = entries
+                              .where(
+                                (e) => e['classId'].toString() == selectedClassId,
+                              )
+                              .toList();
+                          double currentSum = 0;
+                          for (final e in classEntries) {
+                            final s = (e['score'] is num)
+                                ? (e['score'] as num).toDouble()
+                                : double.tryParse(e['score']?.toString() ?? '') ??
+                                      0.0;
+                            currentSum += s;
+                          }
+                          final newSum = currentSum + (score ?? 0);
+                          if (newSum > scoreLimit) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  '该类的分数已达上限 $scoreLimit。当前: $currentSum，新增: ${score ?? 0}，总计: $newSum',
+                                ),
                               ),
-                            ),
-                          );
-                          return;
+                            );
+                            return;
+                          }
                         }
                       }
-                    }
 
-                    final data = {
-                      'name': nameController.text.trim(),
-                      'classId': selectedClassId,
-                      'date': selectedDate?.toIso8601String(),
-                      'proofs': proofs,
-                      'settled': settled,
-                      'score': score,
-                    };
-                    await StorageService.createEntry(data);
-                    Navigator.pop(ctx);
-                    _load();
+                      final data = {
+                        'name': trimmedName,
+                        'classId': selectedClassId,
+                        'date': selectedDate?.toIso8601String(),
+                        'proofs': proofs,
+                        'settled': settled,
+                        'score': score,
+                      };
+                      await StorageService.createEntry(data);
+                      if (!ctx.mounted) return;
+                      Navigator.pop(ctx);
+                      _load();
+                    } catch (e) {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(content: Text('保存失败: $e')),
+                        );
+                      }
+                    }
                   },
                   child: const Text('保存'),
                 ),
@@ -787,19 +802,28 @@ class _LibraryPageState extends State<LibraryPage>
       builder: (ctx) => StatefulBuilder(
         builder: (c, setD) => AlertDialog(
           title: const Text('调整类别'),
-          content: DropdownButtonFormField<String?>(
-            initialValue: newClassId,
-            decoration: const InputDecoration(labelText: '新所属类'),
-            items: [
-              const DropdownMenuItem(value: null, child: Text('未分类')),
-              ...classes.map(
-                (c) => DropdownMenuItem(
-                  value: c['id'].toString(),
-                  child: Text(c['name'] ?? 'Unnamed'),
-                ),
+          content: InputDecorator(
+            decoration: const InputDecoration(
+              labelText: '新所属类',
+              border: OutlineInputBorder(),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String?>(
+                value: newClassId,
+                isExpanded: true,
+                isDense: true,
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('未分类')),
+                  ...classes.map(
+                    (c) => DropdownMenuItem(
+                      value: c['id'].toString(),
+                      child: Text(c['name'] ?? 'Unnamed'),
+                    ),
+                  ),
+                ],
+                onChanged: (v) => setD(() => newClassId = v),
               ),
-            ],
-            onChanged: (v) => setD(() => newClassId = v),
+            ),
           ),
           actions: [
             TextButton(

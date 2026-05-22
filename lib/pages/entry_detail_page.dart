@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:syllogos/pages/entry_edit_page.dart';
 import 'package:syllogos/pages/image_preview_page.dart';
@@ -157,18 +158,24 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     }
   }
 
+  bool _isUrl(String text) {
+    final uri = Uri.tryParse(text);
+    return uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
+  }
+
   @override
   Widget build(BuildContext context) {
     if (entry == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('条目详情')),
-        body: const Center(
+        body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.error_outline, size: 64, color: Colors.grey),
-              SizedBox(height: 16),
-              Text('条目不存在或已被删除'),
+              Icon(Icons.error_outline,
+                  size: 64, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              const SizedBox(height: 16),
+              const Text('条目不存在或已被删除'),
             ],
           ),
         ),
@@ -355,6 +362,59 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
               ),
             ),
           ),
+          // 活动信息卡片
+          if ((entry!['activityInfo'] as List?)?.isNotEmpty == true)
+            Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              color: cs.surfaceContainerLow,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '活动信息',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: cs.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ...List<String>.from(entry!['activityInfo'] ?? []).map(
+                      (text) => Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _isUrl(text)
+                            ? GestureDetector(
+                                onTap: () async {
+                                  final uri = Uri.tryParse(text);
+                                  if (uri != null) {
+                                    try {
+                                      await launchUrl(
+                                        uri,
+                                        mode:
+                                            LaunchMode.externalApplication,
+                                      );
+                                    } catch (_) {}
+                                  }
+                                },
+                                child: Text(
+                                  text,
+                                  style: TextStyle(
+                                    color: cs.primary,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                ),
+                              )
+                            : Text(text),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           const SizedBox(height: 16),
 
           // 证明文件卡片

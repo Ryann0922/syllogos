@@ -20,6 +20,7 @@ class _EntryCreatePageState extends State<EntryCreatePage> {
   bool _settled = false;
   List<Map> proofs = [];
   bool _saving = false;
+  final _activityCtrls = <TextEditingController>[TextEditingController()];
 
   @override
   void initState() {
@@ -47,6 +48,9 @@ class _EntryCreatePageState extends State<EntryCreatePage> {
     _nameCtrl.dispose();
     _scoreCtrl.dispose();
     _nameFocus.dispose();
+    for (final c in _activityCtrls) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -122,6 +126,10 @@ class _EntryCreatePageState extends State<EntryCreatePage> {
         'proofs': proofs,
         'settled': _settled,
         'score': score,
+        'activityInfo': _activityCtrls
+            .map((c) => c.text.trim())
+            .where((s) => s.isNotEmpty)
+            .toList(),
         'createdAt': DateTime.now().toIso8601String(),
       });
 
@@ -244,6 +252,80 @@ class _EntryCreatePageState extends State<EntryCreatePage> {
                             setState(() => _settled = v ?? false),
                       ),
                     ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // 活动信息卡片
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            color: cs.surfaceContainerLow,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '活动信息',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: cs.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ..._activityCtrls.asMap().entries.map((e) {
+                    final i = e.key;
+                    final ctrl = e.value;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: ctrl,
+                              decoration: const InputDecoration(
+                                hintText: '输入文字或链接',
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          if (_activityCtrls.length > 1)
+                            IconButton(
+                              icon: Icon(Icons.remove_circle_outline,
+                                  color: cs.error),
+                              constraints: const BoxConstraints(
+                                minWidth: 36,
+                                minHeight: 36,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  ctrl.dispose();
+                                  _activityCtrls.removeAt(i);
+                                });
+                              },
+                            ),
+                        ],
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 4),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      setState(
+                          () => _activityCtrls.add(TextEditingController()));
+                    },
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('添加'),
                   ),
                 ],
               ),

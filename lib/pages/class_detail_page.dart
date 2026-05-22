@@ -194,7 +194,8 @@ class _ClassDetailPageState extends State<ClassDetailPage> {
                     '${e['date'] ?? ''}${score != null ? ' · 分数：${score.toStringAsFixed(2)}' : ''}',
                   ),
                   trailing: e['settled'] == true
-                      ? const Icon(Icons.check_circle, color: Colors.green)
+                      ? Icon(Icons.check_circle,
+                          color: Theme.of(ctx).colorScheme.tertiary)
                       : null,
                   onTap: () async {
                     await Navigator.push(

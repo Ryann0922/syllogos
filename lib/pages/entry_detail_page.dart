@@ -1,7 +1,8 @@
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:syllogos/pages/entry_edit_page.dart';
 import 'package:syllogos/pages/image_preview_page.dart';
 import 'package:syllogos/services/storage_service.dart';
 
@@ -64,279 +65,16 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
   Future<void> _showEditDialog() async {
     if (entry == null) return;
-
-    final nameCtrl = TextEditingController(text: entry!['name'] ?? '');
-    final nameFocus = FocusNode();
-    final scoreCtrl = TextEditingController(
-      text: entry!['score']?.toString() ?? '',
-    );
-    DateTime? selectedDate = entry!['date'] != null
-        ? DateTime.parse(entry!['date'])
-        : null;
-    bool settled = entry!['settled'] ?? false;
-    List<Map> proofs = List.from(entry!['proofs'] ?? []);
-    String? selectedClassId = entry!['classId'];
-    final classes = StorageService.getAllClasses();
-
-    // 验证条目的类是否仍存在，不存在则置为未分类
-    if (selectedClassId != null) {
-      final classExists = classes.any(
-        (c) => c['id'].toString() == selectedClassId.toString(),
-      );
-      if (!classExists) {
-        selectedClassId = null;
-      }
-    }
-
-    await showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (c, setD) {
-          // 请求焦点
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            nameFocus.requestFocus();
-          });
-
-          return AlertDialog(
-            title: const Text('编辑条目'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: nameCtrl,
-                    focusNode: nameFocus,
-                    autofocus: true,
-                    decoration: const InputDecoration(labelText: '名称'),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: scoreCtrl,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: '分数（可选）',
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: '所属类',
-                          border: OutlineInputBorder(),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String?>(
-                            value: selectedClassId,
-                            isExpanded: true,
-                            isDense: true,
-                            items: [
-                              const DropdownMenuItem(
-                                value: null,
-                                child: Text('未分类'),
-                              ),
-                              ...classes.map(
-                                (c) => DropdownMenuItem(
-                                  value: c['id'].toString(),
-                                  child: Text(c['name'] ?? 'Unnamed'),
-                                ),
-                              ),
-                            ],
-                            onChanged: (v) => setD(() => selectedClassId = v),
-                          ),
-                        ),
-                      ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        selectedDate != null
-                            ? '${selectedDate!.year}-${selectedDate!.month.toString().padLeft(2, '0')}-${selectedDate!.day.toString().padLeft(2, '0')}'
-                            : '未选择日期',
-                      ),
-                      TextButton(
-                        onPressed: () async {
-                          final d = await showDatePicker(
-                            context: context,
-                            initialDate: selectedDate ?? DateTime.now(),
-                            firstDate: DateTime(1970),
-                            lastDate: DateTime(2100),
-                          );
-                          if (d != null) setD(() => selectedDate = d);
-                        },
-                        child: const Text('选择日期'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      const Text('是否结清'),
-                      Checkbox(
-                        value: settled,
-                        onChanged: (v) => setD(() => settled = v ?? false),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      ElevatedButton(
-                        onPressed: () async {
-                          final result = await FilePicker.platform.pickFiles(
-                            allowMultiple: true,
-                          );
-                          if (result != null && result.files.isNotEmpty) {
-                            try {
-                              final saved =
-                                  await StorageService.saveProofPlatformFiles(
-                                    result.files,
-                                  );
-                              setD(() => proofs.addAll(saved));
-                            } catch (e) {
-                              print('Error saving proof files: $e');
-                            }
-                          }
-                        },
-                        child: const Text('添加证明文件'),
-                      ),
-                      const SizedBox(width: 8),
-                      Text('已添加 ${proofs.length} 个'),
-                    ],
-                  ),
-                  if (proofs.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: proofs.asMap().entries.map((e) {
-                        final idx = e.key;
-                        final p = e.value;
-                        final path = p['path']?.toString() ?? '';
-                        final fileName = path.split('/').last;
-                        return Chip(
-                          label: Text(
-                            fileName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          onDeleted: () {
-                            setD(() => proofs.removeAt(idx));
-                          },
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('取消'),
-              ),
-              TextButton(
-                onPressed: () async {
-                  try {
-                    final trimmedName = nameCtrl.text.trim();
-                    if (trimmedName.isEmpty) {
-                      ScaffoldMessenger.of(ctx).showSnackBar(
-                        const SnackBar(content: Text('请输入条目名称')),
-                      );
-                      return;
-                    }
-                    final oldScore = (entry!['score'] is num)
-                        ? (entry!['score'] as num).toDouble()
-                        : double.tryParse(entry!['score']?.toString() ?? '') ??
-                              0.0;
-                    final newScore = double.tryParse(scoreCtrl.text) ?? 0.0;
-                    final scoreDiff = newScore - oldScore;
-
-                    // 检查分数上限（仅当改变分数或改变所属类时）
-                    if (selectedClassId != null &&
-                        (scoreDiff != 0 ||
-                            selectedClassId.toString() !=
-                                entry!['classId'].toString())) {
-                      final selectedClass = classes.firstWhere(
-                        (c) => c['id'].toString() == selectedClassId,
-                        orElse: () => {},
-                      );
-                      if (selectedClass.isNotEmpty &&
-                          selectedClass['scoreLimit'] != null) {
-                        final scoreLimit = (selectedClass['scoreLimit'] as num)
-                            .toDouble();
-
-                        // 计算该类的其他条目的总分（不含当前条目）
-                        final allEntries = StorageService.getAllEntries();
-                        final classEntries = allEntries
-                            .where(
-                              (e) =>
-                                  e['classId'].toString() == selectedClassId &&
-                                  e['id'].toString() != widget.entryId,
-                            )
-                            .toList();
-                        double currentSum = 0;
-                        for (final e in classEntries) {
-                          final s = (e['score'] is num)
-                              ? (e['score'] as num).toDouble()
-                              : double.tryParse(e['score']?.toString() ?? '') ??
-                                      0.0;
-                          currentSum += s;
-                        }
-                        final newSum = currentSum + newScore;
-                        if (newSum > scoreLimit) {
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                '该类的分数将超过上限 $scoreLimit。当前: $currentSum，新分数: $newScore，总计: $newSum',
-                              ),
-                            ),
-                          );
-                          return;
-                        }
-                      }
-                    }
-
-                    final data = {
-                      'name': trimmedName,
-                      'classId': selectedClassId,
-                      'date': selectedDate?.toIso8601String(),
-                      'proofs': proofs,
-                      'settled': settled,
-                      'score': double.tryParse(scoreCtrl.text),
-                    };
-                    await StorageService.updateEntry(widget.entryId, data);
-                    if (!ctx.mounted) return;
-                    Navigator.pop(ctx);
-                    _load();
-                  } catch (e) {
-                    if (ctx.mounted) {
-                      ScaffoldMessenger.of(ctx).showSnackBar(
-                        SnackBar(content: Text('保存失败: $e')),
-                      );
-                    }
-                  }
-                },
-                child: const Text('保存'),
-              ),
-            ],
-          );
-        },
+    final saved = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EntryEditPage(
+          entry: entry!,
+          entryId: widget.entryId,
+        ),
       ),
-    ).then((_) {
-      nameCtrl.dispose();
-      scoreCtrl.dispose();
-      nameFocus.dispose();
-    });
+    );
+    if (saved == true) _load();
   }
 
   Future<void> _deleteEntry() async {
@@ -579,17 +317,31 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 12.0),
                           child: GestureDetector(
-                            onTap: isImage
-                                ? () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            ImagePreviewPage(path: path),
+                            onTap: () {
+                              if (isImage) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        ImagePreviewPage(path: path),
+                                  ),
+                                );
+                              } else {
+                                // 使用系统应用打开 PDF 等文件
+                                OpenFilex.open(path).then((result) {
+                                  if (result.type != ResultType.done &&
+                                      context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          '无法打开文件: ${result.message}',
+                                        ),
                                       ),
                                     );
                                   }
-                                : null,
+                                });
+                              }
+                            },
                             child: Card(
                               elevation: 0,
                               shape: RoundedRectangleBorder(

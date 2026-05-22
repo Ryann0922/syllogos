@@ -203,49 +203,32 @@ class _ClassManagementPageState extends State<ClassManagementPage> {
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const SizedBox(height: 4),
                           if (cls['scoreLimit'] != null)
                             Text(
-                              '分数上限: ${cls['scoreLimit']}',
+                              '上限: ${cls['scoreLimit']}',
                               style: Theme.of(context).textTheme.labelSmall
                                   ?.copyWith(color: cs.onSurfaceVariant),
                             ),
                           if (cls['target'] != null)
                             Text(
-                              '目标分: ${cls['target']}',
+                              '目标: ${cls['target']}',
                               style: Theme.of(context).textTheme.labelSmall
                                   ?.copyWith(color: cs.onSurfaceVariant),
                             ),
                         ],
                       ),
-                      trailing: PopupMenuButton<String>(
-                        onSelected: (value) async {
-                          if (value == 'edit') {
-                            await _editClass(cls);
-                          } else if (value == 'delete') {
-                            await _deleteClass(cls['id'].toString());
-                          }
-                        },
-                        itemBuilder: (BuildContext context) => [
-                          const PopupMenuItem(
-                            value: 'edit',
-                            child: Row(
-                              children: [
-                                Icon(Icons.edit),
-                                SizedBox(width: 8),
-                                Text('编辑'),
-                              ],
-                            ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit_outlined),
+                            tooltip: '编辑',
+                            onPressed: () => _editClass(cls),
                           ),
-                          const PopupMenuItem(
-                            value: 'delete',
-                            child: Row(
-                              children: [
-                                Icon(Icons.delete),
-                                SizedBox(width: 8),
-                                Text('删除'),
-                              ],
-                            ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outlined),
+                            tooltip: '删除',
+                            onPressed: () => _deleteClass(cls['id'].toString()),
                           ),
                         ],
                       ),

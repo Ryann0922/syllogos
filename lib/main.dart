@@ -7,11 +7,16 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
   await StorageService.init();
-  runApp(const MyApp());
+  runApp(MyApp(key: MyApp.appKey));
 }
 
 class MyApp extends StatefulWidget {
-  const MyApp({super.key});
+  static final GlobalKey<_MyAppState> appKey = GlobalKey<_MyAppState>();
+  MyApp({super.key});
+
+  static void refreshTheme() {
+    appKey.currentState?._loadSettings();
+  }
 
   @override
   State<MyApp> createState() => _MyAppState();

@@ -33,7 +33,7 @@ class _ClassDetailPageState extends State<ClassDetailPage> {
       final all = StorageService.getAllClasses();
       classInfo = all.firstWhere(
         (c) => c['id'].toString() == widget.classId,
-        orElse: () => {},
+        orElse: () => <String, dynamic>{},
       );
       if (classInfo != null && classInfo!.isEmpty) classInfo = null;
     } else {

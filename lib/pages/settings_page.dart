@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:syllogos/main.dart';
 import 'package:syllogos/pages/class_management_page.dart';
 import 'package:syllogos/services/export_service.dart';
 import 'package:syllogos/services/storage_service.dart';
@@ -194,6 +195,7 @@ class _SettingsPageState extends State<SettingsPage> {
               final dynamicColor = Color(corePalette.primary.get(80));
               setState(() => primaryColorValue = dynamicColor.toARGB32());
               StorageService.saveSetting('primaryColor', dynamicColor.toARGB32());
+              MyApp.refreshTheme();
               ScaffoldMessenger.of(
                 context,
               ).showSnackBar(const SnackBar(content: Text('已应用系统动态取色')));
@@ -207,6 +209,7 @@ class _SettingsPageState extends State<SettingsPage> {
       } else {
         setState(() => primaryColorValue = selected);
         await StorageService.saveSetting('primaryColor', primaryColorValue);
+        MyApp.refreshTheme();
       }
     }
   }

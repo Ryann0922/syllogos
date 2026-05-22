@@ -25,8 +25,19 @@ class _StatsPageState extends State<StatsPage> {
   }
 
   void _computeRange() {
+    final s = StorageService.getSettings();
+    final selectedStart = s['selectedSchoolYearStart'];
+    if (selectedStart != null) {
+      final start = DateTime(selectedStart as int, startMonth, 1);
+      final end = DateTime(
+        selectedStart + 1,
+        startMonth,
+        1,
+      ).subtract(const Duration(days: 1));
+      yearRange = DateTimeRange(start: start, end: end);
+      return;
+    }
     final now = DateTime.now();
-    // determine academic year start
     final startYear = (now.month >= startMonth) ? now.year : now.year - 1;
     final start = DateTime(startYear, startMonth, 1);
     final end = DateTime(
@@ -46,12 +57,12 @@ class _StatsPageState extends State<StatsPage> {
 
   void _computeStats() {
     stats = {};
+    final currentSY = _getCurrentSchoolYearStart();
     // include each class
     for (final c in classes) {
       stats[c['id'].toString()] = {
         'count': 0,
         'sum': 0.0,
-        'avg': 0.0,
         'target': c['target'],
         'scoreLimit': c['scoreLimit'],
       };
@@ -60,25 +71,13 @@ class _StatsPageState extends State<StatsPage> {
     stats['__uncat'] = {
       'count': 0,
       'sum': 0.0,
-      'avg': 0.0,
       'target': null,
       'scoreLimit': null,
     };
 
     for (final e in entries) {
-      // 检查日期是否在学年范围内（无日期条目仍计入统计）
-      if (e['date'] != null) {
-        DateTime dt;
-        try {
-          dt = DateTime.parse(e['date']);
-          if (yearRange != null &&
-              (dt.isBefore(yearRange!.start) || dt.isAfter(yearRange!.end))) {
-            continue;
-          }
-        } catch (_) {
-          continue;
-        }
-      }
+      final sy = StorageService.getEntrySchoolYearStart(e, startMonth);
+      if (sy == null || sy != currentSY) continue;
       final cid = e['classId'] ?? '__uncat';
       final key = cid == null || cid == '' ? '__uncat' : cid.toString();
       final sc = (e['score'] is num)
@@ -86,25 +85,20 @@ class _StatsPageState extends State<StatsPage> {
           : double.tryParse(e['score']?.toString() ?? '') ?? 0.0;
       final m = stats.putIfAbsent(
         key,
-        () => {
-          'count': 0,
-          'sum': 0.0,
-          'avg': 0.0,
-          'target': null,
-          'scoreLimit': null,
-        },
+        () => {'count': 0, 'sum': 0.0, 'target': null, 'scoreLimit': null},
       );
       m['count'] = (m['count'] as int) + 1;
       m['sum'] = (m['sum'] as double) + sc;
     }
+  }
 
-    // finalize averages
-    for (final k in stats.keys) {
-      final m = stats[k]!;
-      final cnt = m['count'] as int;
-      final sum = m['sum'] as double;
-      m['avg'] = cnt > 0 ? (sum / cnt) : 0.0;
+  int _getCurrentSchoolYearStart() {
+    final s = StorageService.getSettings();
+    if (s['selectedSchoolYearStart'] != null) {
+      return s['selectedSchoolYearStart'] as int;
     }
+    final now = DateTime.now();
+    return (now.month >= startMonth) ? now.year : now.year - 1;
   }
 
   @override
@@ -165,15 +159,14 @@ class _StatsPageState extends State<StatsPage> {
                 children: [
                   ...classes.map((c) {
                     final k = c['id'].toString();
-                    final m =
-                        stats[k] ??
-                        {
-                          'count': 0,
-                          'sum': 0.0,
-                          'avg': 0.0,
-                          'target': c['target'],
-                          'scoreLimit': c['scoreLimit'],
-                        };
+                      final m =
+                          stats[k] ??
+                          {
+                            'count': 0,
+                            'sum': 0.0,
+                            'target': c['target'],
+                            'scoreLimit': c['scoreLimit'],
+                          };
                     final met = (m['target'] != null)
                         ? (m['sum'] as double) >= (m['target'] as num)
                         : null;
@@ -286,7 +279,7 @@ class _StatsPageState extends State<StatsPage> {
                                 ],
                               ),
                               const SizedBox(height: 12),
-                              Row(
+                                  Row(
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
@@ -300,14 +293,6 @@ class _StatsPageState extends State<StatsPage> {
                                     label: '总分',
                                     value: (m['sum'] as double).toStringAsFixed(
                                       1,
-                                    ),
-                                    cs: cs,
-                                    context: context,
-                                  ),
-                                  _StatItem(
-                                    label: '平均',
-                                    value: (m['avg'] as double).toStringAsFixed(
-                                      2,
                                     ),
                                     cs: cs,
                                     context: context,
@@ -381,7 +366,7 @@ class _StatsPageState extends State<StatsPage> {
                     builder: (_) {
                       final m =
                           stats['__uncat'] ??
-                          {'count': 0, 'sum': 0.0, 'avg': 0.0};
+                          {'count': 0, 'sum': 0.0};
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 12.0),
                         child: Card(
@@ -412,13 +397,6 @@ class _StatsPageState extends State<StatsPage> {
                                       label: '总分',
                                       value: (m['sum'] as double)
                                           .toStringAsFixed(1),
-                                      cs: cs,
-                                      context: context,
-                                    ),
-                                    _StatItem(
-                                      label: '平均',
-                                      value: (m['avg'] as double)
-                                          .toStringAsFixed(2),
                                       cs: cs,
                                       context: context,
                                     ),

@@ -1,6 +1,10 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:syllogos/main.dart';
 import 'package:syllogos/pages/class_management_page.dart';
+import 'package:syllogos/pages/export_page.dart';
 import 'package:syllogos/services/export_service.dart';
 import 'package:syllogos/services/storage_service.dart';
 import 'package:syllogos/services/webdav_service.dart';
@@ -15,6 +19,8 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   int startMonth = 9;
+  int? selectedSchoolYearStart;
+  List<int> availableYears = [];
   String themeMode = 'system';
   int primaryColorValue = 0xFF3F51B5; // Colors.indigo
   // WebDAV settings
@@ -28,6 +34,10 @@ class _SettingsPageState extends State<SettingsPage> {
     super.initState();
     final s = StorageService.getSettings();
     if (s.containsKey('startMonth')) startMonth = s['startMonth'];
+    if (s.containsKey('selectedSchoolYearStart')) {
+      selectedSchoolYearStart = s['selectedSchoolYearStart'];
+    }
+    availableYears = StorageService.getAvailableSchoolYears(startMonth);
     if (s.containsKey('theme')) themeMode = s['theme'];
     if (s.containsKey('primaryColor')) primaryColorValue = s['primaryColor'];
     if (s.containsKey('webdavUrl')) webdavUrl = s['webdavUrl'];
@@ -38,16 +48,161 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  Future<void> _export() async {
-    final f = await ExportService.exportAllToZip();
-    if (await f.exists()) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('导出成功：${f.path}')));
-    } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('导出失败')));
+  String get _currentSchoolYearLabel {
+    if (selectedSchoolYearStart != null) {
+      return '${selectedSchoolYearStart}年$startMonth月 ~ ${selectedSchoolYearStart! + 1}年$startMonth月';
+    }
+    final now = DateTime.now();
+    final sy = (now.month >= startMonth) ? now.year : now.year - 1;
+    return '$sy年$startMonth月 ~ ${sy + 1}年$startMonth月（跟随系统）';
+  }
+
+  Future<void> _pickSchoolYear() async {
+    final now = DateTime.now();
+    final currentSy = StorageService.getSchoolYear(now, startMonth);
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (ctx) {
+        int temp = selectedSchoolYearStart ?? -1;
+        return AlertDialog(
+          title: const Text('选择学年'),
+          content: StatefulBuilder(
+            builder: (c, s) {
+              return DropdownButton<int>(
+                value: temp,
+                isExpanded: true,
+                items: [
+                  const DropdownMenuItem(value: -1, child: Text('跟随系统')),
+                  ...List.generate(currentSy - 2020 + 1, (i) => 2020 + i).map(
+                    (y) => DropdownMenuItem(
+                      value: y,
+                      child: Text('$y年$startMonth月 ~ ${y + 1}年$startMonth月'),
+                    ),
+                  ),
+                ],
+                onChanged: (v) {
+                  if (v != null) {
+                    temp = v;
+                    s(() {});
+                  }
+                },
+              );
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, temp),
+              child: const Text('确定'),
+            ),
+          ],
+        );
+      },
+    );
+    if (picked != null) {
+      if (picked == -1) {
+        setState(() => selectedSchoolYearStart = null);
+        await StorageService.saveSetting('selectedSchoolYearStart', null);
+      } else {
+        setState(() => selectedSchoolYearStart = picked);
+        await StorageService.saveSetting('selectedSchoolYearStart', picked);
+      }
+    }
+  }
+
+  Future<void> _webdavDownload() async {
+    if (webdavUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先配置 WebDAV')),
+      );
+      return;
+    }
+    var base = webdavUrl.trim();
+    var remote = webdavRemotePath.trim();
+    if (base.endsWith('/')) base = base.substring(0, base.length - 1);
+    if (!remote.startsWith('/')) remote = '/$remote';
+    if (!remote.endsWith('/')) remote = '$remote/';
+    final listUrl = '$base$remote';
+
+    final files = await WebDavService.listFiles(
+      listUrl,
+      username: webdavUser,
+      password: webdavPass,
+    );
+    if (files.isEmpty) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('没有找到可下载的文件')),
+      );
+      return;
+    }
+
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        String? temp;
+        return AlertDialog(
+          title: const Text('选择要下载的文件'),
+          content: SingleChildScrollView(
+            child: RadioGroup<String>(
+              groupValue: temp,
+              onChanged: (v) {
+                if (v != null) Navigator.pop(ctx, v);
+              },
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: files.map((f) {
+                  final name = f.split('/').last;
+                  return RadioListTile<String>(
+                    value: f,
+                    title: Text(name),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (selected == null) return;
+
+    final fullUrl = selected.startsWith('http')
+        ? selected
+        : '$base$selected';
+    final downloaded = await WebDavService.downloadFile(
+      fullUrl,
+      username: webdavUser,
+      password: webdavPass,
+    );
+    if (downloaded == null) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('下载失败')),
+      );
+      return;
+    }
+
+    try {
+      final count = await ExportService.importFromZip(downloaded.path);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('成功下载并导入 $count 个条目')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('导入失败: $e')),
+      );
     }
   }
 
@@ -301,6 +456,8 @@ class _SettingsPageState extends State<SettingsPage> {
                           );
                           if (picked != null) {
                             setState(() => startMonth = picked);
+                            availableYears =
+                                StorageService.getAvailableSchoolYears(startMonth);
                             await StorageService.saveSetting(
                               'startMonth',
                               startMonth,
@@ -308,6 +465,31 @@ class _SettingsPageState extends State<SettingsPage> {
                           }
                         },
                         child: const Text('修改'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '当前学年',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _currentSchoolYearLabel,
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(color: cs.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                      FilledButton.tonal(
+                        onPressed: _pickSchoolYear,
+                        child: const Text('切换'),
                       ),
                     ],
                   ),
@@ -347,7 +529,11 @@ class _SettingsPageState extends State<SettingsPage> {
                           Text(
                             themeMode == 'system'
                                 ? '跟随系统'
-                                : (themeMode == 'light' ? '亮色' : '暗色'),
+                                : (themeMode == 'light'
+                                    ? '亮色'
+                                    : (themeMode == 'amoled'
+                                        ? 'AMOLED黑'
+                                        : '暗色')),
                             style: Theme.of(context).textTheme.labelSmall
                                 ?.copyWith(color: cs.onSurfaceVariant),
                           ),
@@ -382,6 +568,10 @@ class _SettingsPageState extends State<SettingsPage> {
                                           RadioListTile(
                                             value: 'dark',
                                             title: Text('暗色'),
+                                          ),
+                                          RadioListTile(
+                                            value: 'amoled',
+                                            title: Text('AMOLED黑'),
                                           ),
                                         ],
                                       ),
@@ -479,9 +669,59 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   const SizedBox(height: 8),
                   FilledButton.icon(
-                    onPressed: _export,
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ExportPage(),
+                        ),
+                      );
+                    },
                     icon: const Icon(Icons.download),
                     label: const Text('导出数据（ZIP）'),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.icon(
+                    onPressed: () async {
+                      final result = await FilePicker.platform.pickFiles(
+                        type: FileType.any,
+                        allowMultiple: false,
+                        withData: true,
+                      );
+                      if (result == null || result.files.isEmpty) return;
+                      final pf = result.files.single;
+                      try {
+                        String zipPath;
+                        if (pf.path != null &&
+                            !pf.path!.startsWith('content://')) {
+                          zipPath = pf.path!;
+                        } else if (pf.bytes != null) {
+                          final tempDir = Directory.systemTemp;
+                          final tempFile = File(
+                            '${tempDir.path}/${pf.name}',
+                          );
+                          await tempFile.writeAsBytes(pf.bytes!);
+                          zipPath = tempFile.path;
+                        } else {
+                          return;
+                        }
+                        final count =
+                            await ExportService.importFromZip(zipPath);
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('成功导入 $count 个条目'),
+                          ),
+                        );
+                      } catch (e) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('导入失败: $e')),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.upload),
+                    label: const Text('导入数据（ZIP）'),
                   ),
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
@@ -515,16 +755,24 @@ class _SettingsPageState extends State<SettingsPage> {
                         if (!context.mounted) return;
                         ScaffoldMessenger.of(
                           context,
-                        ).showSnackBar(const SnackBar(content: Text('上传成功')));
+                        ).showSnackBar(
+                            const SnackBar(content: Text('上传成功')));
                       } else {
                         if (!context.mounted) return;
                         ScaffoldMessenger.of(
                           context,
-                        ).showSnackBar(const SnackBar(content: Text('上传失败')));
+                        ).showSnackBar(
+                            const SnackBar(content: Text('上传失败')));
                       }
                     },
                     icon: const Icon(Icons.cloud_upload),
                     label: const Text('上传到 WebDAV'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _webdavDownload,
+                    icon: const Icon(Icons.cloud_download),
+                    label: const Text('从 WebDAV 下载'),
                   ),
                 ],
               ),
@@ -634,6 +882,108 @@ class _SettingsPageState extends State<SettingsPage> {
                     Icon(Icons.edit, color: cs.onSurfaceVariant),
                   ],
                 ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            color: cs.errorContainer.withValues(alpha: 0.3),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: cs.error,
+                    ),
+                    onPressed: () async {
+                      final ok = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('确认删除'),
+                          content: const Text(
+                            '确定要删除当前学年的所有数据吗？此操作不可恢复。',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: const Text('取消'),
+                            ),
+                            FilledButton(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: cs.error,
+                              ),
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('删除'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (ok != true) return;
+                      final sy = selectedSchoolYearStart;
+                      if (sy != null) {
+                        await StorageService.deleteEntriesBySchoolYear(
+                          sy,
+                          startMonth,
+                        );
+                      } else {
+                        final now = DateTime.now();
+                        final cur = (now.month >= startMonth)
+                            ? now.year
+                            : now.year - 1;
+                        await StorageService.deleteEntriesBySchoolYear(
+                          cur,
+                          startMonth,
+                        );
+                      }
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('当前学年数据已删除')),
+                      );
+                    },
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('删除当前学年数据'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: cs.error,
+                    ),
+                    onPressed: () async {
+                      final ok = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('确认删除所有数据'),
+                          content: const Text(
+                            '确定要删除所有数据吗？此操作不可恢复。',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: const Text('取消'),
+                            ),
+                            FilledButton(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: cs.error,
+                              ),
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('删除所有'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (ok != true) return;
+                      await StorageService.deleteAllEntries();
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('所有数据已删除')),
+                      );
+                    },
+                    icon: const Icon(Icons.delete_forever),
+                    label: const Text('删除所有数据'),
+                  ),
+                ],
               ),
             ),
           ),

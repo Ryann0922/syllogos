@@ -86,7 +86,7 @@ class _EntryEditPageState extends State<EntryEditPage> {
     super.dispose();
   }
 
-  Future<void> _pickProofs() async {
+  Future<void> _pickFiles() async {
     try {
       final result = await FilePicker.platform.pickFiles(allowMultiple: true);
       if (result != null && result.files.isNotEmpty) {
@@ -97,6 +97,25 @@ class _EntryEditPageState extends State<EntryEditPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('选择文件失败: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickImages() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: true,
+      );
+      if (result != null && result.files.isNotEmpty) {
+        final saved = await StorageService.saveProofPlatformFiles(result.files);
+        setState(() => proofs.addAll(saved));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('选择图片失败: $e')),
         );
       }
     }
@@ -176,6 +195,8 @@ class _EntryEditPageState extends State<EntryEditPage> {
             .where((s) => s.isNotEmpty)
             .toList(),
         'createdAt': DateTime.now().toIso8601String(),
+        if (widget.entry['schoolYearStart'] != null)
+          'schoolYearStart': widget.entry['schoolYearStart'],
       });
 
       if (!mounted) return;
@@ -396,10 +417,24 @@ class _EntryEditPageState extends State<EntryEditPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  ElevatedButton.icon(
-                    onPressed: _pickProofs,
-                    icon: const Icon(Icons.attach_file),
-                    label: const Text('选择证明文件'),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _pickFiles,
+                          icon: const Icon(Icons.attach_file),
+                          label: const Text('选择文件'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _pickImages,
+                          icon: const Icon(Icons.image),
+                          label: const Text('选择图片'),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   Text(

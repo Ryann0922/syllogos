@@ -24,6 +24,7 @@ class _LibraryPageState extends State<LibraryPage>
 
   // 搜索和排序
   String _searchQuery = '';
+  bool _isSearching = false;
   String? _sortField;
   bool _sortAscending = false;
 
@@ -484,32 +485,10 @@ class _LibraryPageState extends State<LibraryPage>
                   icon: const Icon(Icons.search),
                   tooltip: '搜索',
                   onPressed: () {
-                    final focusNode = FocusNode();
-                    showDialog(
-                      context: context,
-                      builder: (ctx) => StatefulBuilder(
-                        builder: (c, setD) => AlertDialog(
-                          title: const Text('搜索条目'),
-                          content: TextField(
-                            focusNode: focusNode,
-                            autofocus: true,
-                            decoration: const InputDecoration(
-                              labelText: '输入条目名称',
-                              hintText: '输入要搜索的条目名称',
-                            ),
-                            onChanged: (v) {
-                              setState(() => _searchQuery = v);
-                            },
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx),
-                              child: const Text('关闭'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ).then((_) => focusNode.dispose());
+                    setState(() {
+                      _isSearching = !_isSearching;
+                      if (!_isSearching) _searchQuery = '';
+                    });
                   },
                 ),
               ],
@@ -535,7 +514,39 @@ class _LibraryPageState extends State<LibraryPage>
           ),
         ),
       ),
-      body: TabBarView(
+      body: Column(
+        children: [
+          if (_isSearching)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: TextField(
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: '搜索条目名称...',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => setState(() {
+                      _isSearching = false;
+                      _searchQuery = '';
+                    }),
+                  ),
+                  filled: true,
+                  fillColor: cs.surfaceContainerHighest,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(28),
+                  ),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                ),
+                onChanged: (v) => setState(() => _searchQuery = v),
+              ),
+            ),
+          Expanded(
+            child: TabBarView(
         controller: _categoryTabController,
         children: List.generate(_categoryTabs.length, (tabIndex) {
           final list = filteredEntries.where((e) {
@@ -714,6 +725,9 @@ class _LibraryPageState extends State<LibraryPage>
             },
           );
         }),
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {

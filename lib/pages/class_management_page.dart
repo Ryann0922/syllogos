@@ -186,49 +186,58 @@ class _ClassManagementPageState extends State<ClassManagementPage> {
                       borderRadius: BorderRadius.circular(16),
                     ),
                     color: cs.surfaceContainerLow,
-                    child: ListTile(
-                      leading: ReorderableDragStartListener(
-                        index: i,
-                        child: Icon(
-                          Icons.drag_handle,
-                          color: cs.onSurfaceVariant,
-                        ),
-                      ),
-                      title: Text(
-                        cls['name'] ?? 'Unnamed',
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      child: Row(
                         children: [
-                          if (cls['scoreLimit'] != null)
-                            Text(
-                              '上限: ${cls['scoreLimit']}',
-                              style: Theme.of(context).textTheme.labelSmall
-                                  ?.copyWith(color: cs.onSurfaceVariant),
+                          ReorderableDragStartListener(
+                            index: i,
+                            child: Icon(
+                              Icons.drag_handle,
+                              color: cs.onSurfaceVariant,
                             ),
-                          if (cls['target'] != null)
-                            Text(
-                              '目标: ${cls['target']}',
-                              style: Theme.of(context).textTheme.labelSmall
-                                  ?.copyWith(color: cs.onSurfaceVariant),
-                            ),
-                        ],
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.edit_outlined),
-                            tooltip: '编辑',
-                            onPressed: () => _editClass(cls),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outlined),
-                            tooltip: '删除',
-                            onPressed: () => _deleteClass(cls['id'].toString()),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  cls['name'] ?? 'Unnamed',
+                                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                if (cls['scoreLimit'] != null)
+                                  Text(
+                                    '上限: ${cls['scoreLimit']}',
+                                    style: Theme.of(context).textTheme.labelSmall
+                                        ?.copyWith(color: cs.onSurfaceVariant),
+                                  ),
+                                if (cls['target'] != null)
+                                  Text(
+                                    '目标: ${cls['target']}',
+                                    style: Theme.of(context).textTheme.labelSmall
+                                        ?.copyWith(color: cs.onSurfaceVariant),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit_outlined),
+                                tooltip: '编辑',
+                                onPressed: () => _editClass(cls),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outlined),
+                                tooltip: '删除',
+                                onPressed: () => _deleteClass(cls['id'].toString()),
+                              ),
+                            ],
                           ),
                         ],
                       ),

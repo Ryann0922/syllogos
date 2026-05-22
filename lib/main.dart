@@ -23,14 +23,13 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  ThemeMode _themeMode = ThemeMode.system;
+  String _themeStr = 'system';
   Color _seedColor = Colors.indigo;
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
-    // listen to settings changes in Hive and refresh theme
     try {
       Hive.box('settings').listenable().addListener(() {
         _loadSettings();
@@ -44,14 +43,7 @@ class _MyAppState extends State<MyApp> {
     final settings = StorageService.getSettings();
     setState(() {
       if (settings.containsKey('theme')) {
-        final t = settings['theme'];
-        if (t == 'light') {
-          _themeMode = ThemeMode.light;
-        } else if (t == 'dark') {
-          _themeMode = ThemeMode.dark;
-        } else {
-          _themeMode = ThemeMode.system;
-        }
+        _themeStr = settings['theme'];
       }
       if (settings.containsKey('primaryColor')) {
         try {
@@ -65,6 +57,12 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
+    final themeMode = _themeStr == 'light'
+        ? ThemeMode.light
+        : _themeStr == 'dark'
+            ? ThemeMode.dark
+            : ThemeMode.system;
+
     final theme = ThemeData(
       colorScheme: ColorScheme.fromSeed(seedColor: _seedColor),
       useMaterial3: true,
@@ -75,8 +73,31 @@ class _MyAppState extends State<MyApp> {
         ),
       ),
     );
+
+    ColorScheme darkScheme;
+    if (_themeStr == 'amoled') {
+      final base = ColorScheme.fromSeed(
+        seedColor: _seedColor,
+        brightness: Brightness.dark,
+      );
+      darkScheme = base.copyWith(
+        surface: Colors.black,
+        surfaceDim: Colors.black,
+        surfaceBright: const Color(0xFF1a1a1a),
+        surfaceContainerLowest: Colors.black,
+        surfaceContainerLow: const Color(0xFF0d0d0d),
+        surfaceContainer: const Color(0xFF141414),
+        surfaceContainerHigh: const Color(0xFF1e1e1e),
+        surfaceContainerHighest: const Color(0xFF282828),
+      );
+    } else {
+      darkScheme = ColorScheme.fromSeed(
+        seedColor: _seedColor,
+        brightness: Brightness.dark,
+      );
+    }
     final dark = ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: _seedColor, brightness: Brightness.dark),
+      colorScheme: darkScheme,
       useMaterial3: true,
       cardTheme: CardThemeData(
         elevation: 0,
@@ -91,7 +112,7 @@ class _MyAppState extends State<MyApp> {
       title: 'Syllogos',
       theme: theme,
       darkTheme: dark,
-      themeMode: _themeMode,
+      themeMode: themeMode,
       home: const HomePage(),
     );
   }

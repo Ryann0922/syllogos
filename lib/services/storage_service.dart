@@ -147,6 +147,72 @@ class StorageService {
     return all.where((e) => e['classId'] == classId).toList();
   }
 
+  /// 根据日期计算学年起始年
+  static int getSchoolYear(DateTime date, int startMonth) {
+    return (date.month >= startMonth) ? date.year : date.year - 1;
+  }
+
+  /// 获取条目的学年起始年，优先使用 schoolYearStart 字段，回退到 createdAt
+  static int? getEntrySchoolYearStart(Map entry, int startMonth) {
+    if (entry['schoolYearStart'] != null) {
+      return entry['schoolYearStart'] as int;
+    }
+    final created = entry['createdAt'];
+    if (created != null) {
+      final dt = DateTime.tryParse(created);
+      if (dt != null) return getSchoolYear(dt, startMonth);
+    }
+    return null;
+  }
+
+  /// 返回 2020~当前学年的范围列表
+  static List<int> getAvailableSchoolYears(int startMonth) {
+    final now = DateTime.now();
+    final current = getSchoolYear(now, startMonth);
+    const start = 2020;
+    return List.generate(current - start + 1, (i) => start + i);
+  }
+
+  /// 删除指定学年范围内的所有条目及其证明文件
+  static Future<void> deleteEntriesBySchoolYear(
+      int startYear, int startMonth) async {
+    final all = getAllEntries();
+    for (final entry in all) {
+      final sy = getEntrySchoolYearStart(entry, startMonth);
+      if (sy != startYear) continue;
+      // 删除证明文件
+      final proofs = List.from(entry['proofs'] ?? []);
+      for (final p in proofs) {
+        final path = p['path']?.toString();
+        if (path != null) {
+          try {
+            final f = File(path);
+            if (await f.exists()) await f.delete();
+          } catch (_) {}
+        }
+      }
+      await _entriesBox.delete(entry['id'].toString());
+    }
+  }
+
+  /// 删除所有条目及其证明文件
+  static Future<void> deleteAllEntries() async {
+    final all = getAllEntries();
+    for (final entry in all) {
+      final proofs = List.from(entry['proofs'] ?? []);
+      for (final p in proofs) {
+        final path = p['path']?.toString();
+        if (path != null) {
+          try {
+            final f = File(path);
+            if (await f.exists()) await f.delete();
+          } catch (_) {}
+        }
+      }
+    }
+    await _entriesBox.clear();
+  }
+
   /// 从条目中移除证明（根据证明 path），并尝试删除文件
   static Future<void> removeProofFromEntry(
     String entryId,

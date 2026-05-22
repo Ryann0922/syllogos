@@ -160,6 +160,7 @@ class _EntryEditPageState extends State<EntryEditPage> {
         'proofs': proofs,
         'settled': _settled,
         'score': double.tryParse(_scoreCtrl.text),
+        'createdAt': DateTime.now().toIso8601String(),
       });
 
       if (!mounted) return;

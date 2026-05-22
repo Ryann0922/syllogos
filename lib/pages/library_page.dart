@@ -22,10 +22,10 @@ class _LibraryPageState extends State<LibraryPage>
   bool _isMultiSelectMode = false;
   final Set<String> _selectedEntryIds = {};
 
-  // 搜索和筛选
+  // 搜索和排序
   String _searchQuery = '';
-  DateTime? _filterStartDate;
-  DateTime? _filterEndDate;
+  String? _sortField;
+  bool _sortAscending = false;
 
   @override
   void initState() {
@@ -104,34 +104,47 @@ class _LibraryPageState extends State<LibraryPage>
         }
       }
 
-      // 按日期范围筛选
-      if (_filterStartDate != null || _filterEndDate != null) {
-        if (e['date'] != null) {
-          final date = DateTime.tryParse(e['date']);
-          if (date != null) {
-            if (_filterStartDate != null && date.isBefore(_filterStartDate!)) {
-              return false;
-            }
-            if (_filterEndDate != null && date.isAfter(_filterEndDate!)) {
-              return false;
-            }
-          }
-        } else {
-          if (_filterStartDate != null || _filterEndDate != null) {
-            return false;
-          }
-        }
-      }
-
       return true;
-    }).toList()..sort((a, b) {
-      final da = a['date'] != null ? DateTime.tryParse(a['date']) : null;
-      final db = b['date'] != null ? DateTime.tryParse(b['date']) : null;
-      if (da == null && db == null) return 0;
-      if (da == null) return 1;
-      if (db == null) return -1;
-      return db.compareTo(da);
-    });
+    }).toList()
+      ..sort((a, b) {
+        final field = _sortField;
+        if (field == null) {
+          // default: sort by date descending
+          final da = a['date'] != null ? DateTime.tryParse(a['date']) : null;
+          final db = b['date'] != null ? DateTime.tryParse(b['date']) : null;
+          if (da == null && db == null) return 0;
+          if (da == null) return 1;
+          if (db == null) return -1;
+          return db.compareTo(da);
+        }
+
+        int cmp;
+        if (field == 'date') {
+          final da = a['date'] != null ? DateTime.tryParse(a['date']) : null;
+          final db = b['date'] != null ? DateTime.tryParse(b['date']) : null;
+          if (da == null && db == null) cmp = 0;
+          else if (da == null) cmp = 1;
+          else if (db == null) cmp = -1;
+          else cmp = da.compareTo(db);
+        } else if (field == 'createdAt') {
+          final da = a['createdAt'] != null
+              ? DateTime.tryParse(a['createdAt'])
+              : null;
+          final db = b['createdAt'] != null
+              ? DateTime.tryParse(b['createdAt'])
+              : null;
+          if (da == null && db == null) cmp = 0;
+          else if (da == null) cmp = 1;
+          else if (db == null) cmp = -1;
+          else cmp = da.compareTo(db);
+        } else {
+          // name
+          final na = (a['name'] ?? '').toString();
+          final nb = (b['name'] ?? '').toString();
+          cmp = na.compareTo(nb);
+        }
+        return _sortAscending ? cmp : -cmp;
+      });
   }
 
   Future<void> _showAddClass() async {
@@ -217,94 +230,28 @@ class _LibraryPageState extends State<LibraryPage>
     });
   }
 
-  Future<void> _showFilterDialog() async {
-    await showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (c, setD) => AlertDialog(
-          title: const Text('筛选条件'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('按日期范围筛选'),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _filterStartDate != null
-                            ? '从 ${_filterStartDate!.toString().split(' ').first}'
-                            : '从 (未设置)',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () async {
-                        final d = await showDatePicker(
-                          context: context,
-                          initialDate: _filterStartDate ?? DateTime.now(),
-                          firstDate: DateTime(1970),
-                          lastDate: DateTime(2100),
-                        );
-                        if (d != null) {
-                          setD(() => _filterStartDate = d);
-                          setState(() {});
-                        }
-                      },
-                      child: const Text('设置'),
-                    ),
-                  ],
-                ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _filterEndDate != null
-                            ? '至 ${_filterEndDate!.toString().split(' ').first}'
-                            : '至 (未设置)',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () async {
-                        final d = await showDatePicker(
-                          context: context,
-                          initialDate: _filterEndDate ?? DateTime.now(),
-                          firstDate: DateTime(1970),
-                          lastDate: DateTime(2100),
-                        );
-                        if (d != null) {
-                          setD(() => _filterEndDate = d);
-                          setState(() {});
-                        }
-                      },
-                      child: const Text('设置'),
-                    ),
-                  ],
-                ),
-                if (_filterStartDate != null || _filterEndDate != null)
-                  TextButton(
-                    onPressed: () {
-                      setD(() {
-                        _filterStartDate = null;
-                        _filterEndDate = null;
-                      });
-                      setState(() {});
-                    },
-                    child: const Text('清除日期筛选'),
-                  ),
-              ],
-            ),
+  Widget _buildSortMenuItem(String value, String label, IconData icon) {
+    final cs = Theme.of(context).colorScheme;
+    final active = _sortField == value;
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: active ? cs.primary : cs.onSurfaceVariant),
+        const SizedBox(width: 12),
+        Text(
+          label,
+          style: TextStyle(
+            fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+            color: active ? cs.primary : cs.onSurface,
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('关闭'),
-            ),
-          ],
         ),
-      ),
+        const Spacer(),
+        if (active)
+          Icon(
+            _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+            size: 18,
+            color: cs.primary,
+          ),
+      ],
     );
   }
 
@@ -497,10 +444,41 @@ class _LibraryPageState extends State<LibraryPage>
                 ),
               ]
             : [
-                IconButton(
+                PopupMenuButton<String>(
                   icon: const Icon(Icons.tune),
-                  tooltip: '筛选',
-                  onPressed: _showFilterDialog,
+                  tooltip: '排序',
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  surfaceTintColor: Colors.transparent,
+                  onSelected: (value) {
+                    setState(() {
+                      if (_sortField == value) {
+                        _sortAscending = !_sortAscending;
+                      } else {
+                        _sortField = value;
+                        _sortAscending = true;
+                      }
+                    });
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: 'date',
+                      child: _buildSortMenuItem('date', '日期', Icons.calendar_today),
+                    ),
+                    PopupMenuItem(
+                      value: 'createdAt',
+                      child: _buildSortMenuItem(
+                        'createdAt',
+                        '修改时间',
+                        Icons.access_time,
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'name',
+                      child: _buildSortMenuItem('name', '名称', Icons.sort_by_alpha),
+                    ),
+                  ],
                 ),
                 IconButton(
                   icon: const Icon(Icons.search),

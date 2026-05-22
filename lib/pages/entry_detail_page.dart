@@ -1,7 +1,9 @@
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:syllogos/pages/entry_edit_page.dart';
 import 'package:syllogos/pages/image_preview_page.dart';
 import 'package:syllogos/services/storage_service.dart';
@@ -98,6 +100,60 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     if (ok == true) {
       await StorageService.deleteEntry(widget.entryId);
       Navigator.pop(context);
+    }
+  }
+
+  Future<void> _saveProofFile(Map proof) async {
+    final srcPath = proof['path']?.toString();
+    if (srcPath == null) return;
+    final src = File(srcPath);
+    if (!await src.exists()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('文件不存在')),
+        );
+      }
+      return;
+    }
+    final fileName = proof['name']?.toString() ?? srcPath.split('/').last;
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final destPath = '${dir.path}/$fileName';
+      await src.copy(destPath);
+      // try to use file_picker saveFile for user-selected location
+      final savePath = await FilePicker.platform.saveFile(
+        dialogTitle: '保存文件',
+        fileName: fileName,
+      );
+      if (savePath != null) {
+        await src.copy(savePath);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('文件已保存')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('保存失败: $e')),
+        );
+      }
+    }
+  }
+
+  String _formatDateTime(String iso) {
+    try {
+      final dt = DateTime.parse(iso);
+      final y = dt.year;
+      final mo = dt.month.toString().padLeft(2, '0');
+      final d = dt.day.toString().padLeft(2, '0');
+      final h = dt.hour.toString().padLeft(2, '0');
+      final mi = dt.minute.toString().padLeft(2, '0');
+      final s = dt.second.toString().padLeft(2, '0');
+      return '$y-$mo-$d $h:$mi:$s';
+    } catch (_) {
+      return iso;
     }
   }
 
@@ -274,6 +330,27 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 16),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '修改时间',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        entry!['createdAt'] != null
+                            ? _formatDateTime(entry!['createdAt'])
+                            : '无',
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -407,12 +484,20 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                         ],
                                       ),
                                     ),
-                                    if (isImage)
-                                      Icon(
-                                        Icons.image,
+                                    IconButton(
+                                      icon: Icon(
+                                        Icons.download,
                                         color: cs.primary,
                                         size: 20,
                                       ),
+                                      constraints: const BoxConstraints(
+                                        minWidth: 36,
+                                        minHeight: 36,
+                                      ),
+                                      padding: EdgeInsets.zero,
+                                      tooltip: '保存到本地',
+                                      onPressed: () => _saveProofFile(p),
+                                    ),
                                   ],
                                 ),
                               ),

@@ -122,6 +122,7 @@ class _EntryCreatePageState extends State<EntryCreatePage> {
         'proofs': proofs,
         'settled': _settled,
         'score': score,
+        'createdAt': DateTime.now().toIso8601String(),
       });
 
       if (!mounted) return;

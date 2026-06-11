@@ -8,7 +8,6 @@ import 'package:syllogos/pages/export_page.dart';
 import 'package:syllogos/services/export_service.dart';
 import 'package:syllogos/services/storage_service.dart';
 import 'package:syllogos/services/webdav_service.dart';
-import 'package:dynamic_color/dynamic_color.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -23,6 +22,7 @@ class _SettingsPageState extends State<SettingsPage> {
   List<int> availableYears = [];
   String themeMode = 'system';
   int primaryColorValue = 0xFF3F51B5; // Colors.indigo
+  bool _isDynamicColor = true; // 系统动态取色
   // WebDAV settings
   String webdavUrl = '';
   String webdavUser = '';
@@ -39,7 +39,12 @@ class _SettingsPageState extends State<SettingsPage> {
     }
     availableYears = StorageService.getAvailableSchoolYears(startMonth);
     if (s.containsKey('theme')) themeMode = s['theme'];
-    if (s.containsKey('primaryColor')) primaryColorValue = s['primaryColor'];
+    if (s.containsKey('primaryColor')) {
+      if (s['primaryColor'] != null) {
+        primaryColorValue = s['primaryColor'];
+        _isDynamicColor = false;
+      }
+    }
     if (s.containsKey('webdavUrl')) webdavUrl = s['webdavUrl'];
     if (s.containsKey('webdavUser')) webdavUser = s['webdavUser'];
     if (s.containsKey('webdavPass')) webdavPass = s['webdavPass'];
@@ -342,27 +347,22 @@ class _SettingsPageState extends State<SettingsPage> {
 
     if (selected != null) {
       if (selected == -1) {
-        // 使用系统动态取色
-        try {
-          await DynamicColorPlugin.getCorePalette().then((corePalette) {
-            if (corePalette != null) {
-              // 从系统色盘提取主色
-              final dynamicColor = Color(corePalette.primary.get(80));
-              setState(() => primaryColorValue = dynamicColor.toARGB32());
-              StorageService.saveSetting('primaryColor', dynamicColor.toARGB32());
-              MyApp.refreshTheme();
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('已应用系统动态取色')));
-            }
-          });
-        } catch (e) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('此设备不支持系统动态取色')));
-        }
+        // 系统动态取色 — 清除手动选色，DynamicColorBuilder 自动接管
+        setState(() {
+          _isDynamicColor = true;
+          primaryColorValue = Colors.indigo.toARGB32();
+        });
+        await StorageService.saveSetting('primaryColor', null);
+        MyApp.refreshTheme();
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已切换为系统动态取色')),
+        );
       } else {
-        setState(() => primaryColorValue = selected);
+        setState(() {
+          _isDynamicColor = false;
+          primaryColorValue = selected;
+        });
         await StorageService.saveSetting('primaryColor', primaryColorValue);
         MyApp.refreshTheme();
       }
@@ -615,15 +615,29 @@ class _SettingsPageState extends State<SettingsPage> {
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
                           const SizedBox(height: 4),
-                          Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              color: Color(primaryColorValue),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: cs.outline, width: 1),
-                            ),
-                          ),
+                          _isDynamicColor
+                              ? Container(
+                                  width: 32,
+                                  height: 32,
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [Colors.indigo, Colors.cyan, Colors.teal],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: cs.outline, width: 1),
+                                  ),
+                                )
+                              : Container(
+                                  width: 32,
+                                  height: 32,
+                                  decoration: BoxDecoration(
+                                    color: Color(primaryColorValue),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: cs.outline, width: 1),
+                                  ),
+                                ),
                         ],
                       ),
                       FilledButton.tonal(

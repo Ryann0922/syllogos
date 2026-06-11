@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:hive/hive.dart';
@@ -19,6 +20,9 @@ class StorageService {
   static Map getSettings() {
     return Map.from(_settingsBox.toMap());
   }
+
+  static Stream<BoxEvent> get settingsStream => _settingsBox.watch();
+  static Stream<BoxEvent> get entriesStream => _entriesBox.watch();
 
   static Future<void> saveSetting(String key, dynamic value) async {
     await _settingsBox.put(key, value);
@@ -163,6 +167,17 @@ class StorageService {
       if (dt != null) return getSchoolYear(dt, startMonth);
     }
     return null;
+  }
+
+  /// 获取当前有效的学年起始年（优先使用设置中的选中值，回退到当前日期）
+  static int getCurrentSchoolYearStart() {
+    final s = getSettings();
+    final startMonth = s['startMonth'] ?? 9;
+    if (s['selectedSchoolYearStart'] != null) {
+      return s['selectedSchoolYearStart'] as int;
+    }
+    final now = DateTime.now();
+    return (now.month >= startMonth) ? now.year : now.year - 1;
   }
 
   /// 返回 2020~当前学年的范围列表

@@ -150,7 +150,7 @@ class _EntryCreatePageState extends State<EntryCreatePage> {
             .where((s) => s.isNotEmpty)
             .toList(),
         'createdAt': DateTime.now().toIso8601String(),
-        'schoolYearStart': StorageService.getSchoolYear(DateTime.now(), 9),
+        'schoolYearStart': StorageService.getCurrentSchoolYearStart(),
       });
 
       if (!mounted) return;

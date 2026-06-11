@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:syllogos/pages/entry_create_page.dart';
@@ -27,6 +28,8 @@ class _LibraryPageState extends State<LibraryPage>
   bool _isSearching = false;
   String? _sortField;
   bool _sortAscending = false;
+  late final StreamSubscription _settingsSub;
+  late final StreamSubscription _entriesSub;
 
   @override
   void initState() {
@@ -34,10 +37,14 @@ class _LibraryPageState extends State<LibraryPage>
     _categoryTabs = ['全部'];
     _categoryTabController = TabController(length: 1, vsync: this);
     _load();
+    _settingsSub = StorageService.settingsStream.listen((_) => _load());
+    _entriesSub = StorageService.entriesStream.listen((_) => _load());
   }
 
   @override
   void dispose() {
+    _settingsSub.cancel();
+    _entriesSub.cancel();
     _categoryTabController.dispose();
     super.dispose();
   }
@@ -95,7 +102,15 @@ class _LibraryPageState extends State<LibraryPage>
   }
 
   List<Map> _getFilteredEntries() {
+    final s = StorageService.getSettings();
+    final startMonth = s['startMonth'] ?? 9;
+    final selectedSY = s['selectedSchoolYearStart'] ?? StorageService.getSchoolYear(DateTime.now(), startMonth);
+
     return entries.where((e) {
+      // 按学年过滤
+      final entrySY = StorageService.getEntrySchoolYearStart(e, startMonth);
+      if (entrySY == null || entrySY != selectedSY) return false;
+
       // 按名称搜索
       if (_searchQuery.isNotEmpty) {
         if (!(e['name'] ?? '').toLowerCase().contains(

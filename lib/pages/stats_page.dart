@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:syllogos/services/storage_service.dart';
 
@@ -14,6 +15,8 @@ class _StatsPageState extends State<StatsPage> {
   List<Map> classes = [];
   List<Map> entries = [];
   Map<String, Map<String, dynamic>> stats = {};
+  late final StreamSubscription _settingsSub;
+  late final StreamSubscription _entriesSub;
 
   @override
   void initState() {
@@ -22,6 +25,18 @@ class _StatsPageState extends State<StatsPage> {
     if (s.containsKey('startMonth')) startMonth = s['startMonth'];
     _computeRange();
     _loadData();
+    _settingsSub = StorageService.settingsStream.listen((_) {
+      _computeRange();
+      _loadData();
+    });
+    _entriesSub = StorageService.entriesStream.listen((_) => _loadData());
+  }
+
+  @override
+  void dispose() {
+    _settingsSub.cancel();
+    _entriesSub.cancel();
+    super.dispose();
   }
 
   void _computeRange() {
@@ -57,7 +72,7 @@ class _StatsPageState extends State<StatsPage> {
 
   void _computeStats() {
     stats = {};
-    final currentSY = _getCurrentSchoolYearStart();
+    final currentSY = StorageService.getCurrentSchoolYearStart();
     // include each class
     for (final c in classes) {
       stats[c['id'].toString()] = {
@@ -90,15 +105,6 @@ class _StatsPageState extends State<StatsPage> {
       m['count'] = (m['count'] as int) + 1;
       m['sum'] = (m['sum'] as double) + sc;
     }
-  }
-
-  int _getCurrentSchoolYearStart() {
-    final s = StorageService.getSettings();
-    if (s['selectedSchoolYearStart'] != null) {
-      return s['selectedSchoolYearStart'] as int;
-    }
-    final now = DateTime.now();
-    return (now.month >= startMonth) ? now.year : now.year - 1;
   }
 
   @override

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:dynamic_color/dynamic_color.dart';
 import 'package:syllogos/services/storage_service.dart';
 import 'package:syllogos/pages/home_page.dart';
 
@@ -24,7 +25,8 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   String _themeStr = 'system';
-  Color _seedColor = Colors.indigo;
+  Color? _seedColor; // null = use system dynamic color
+  bool get _useDynamicColor => _seedColor == null;
 
   @override
   void initState() {
@@ -45,14 +47,66 @@ class _MyAppState extends State<MyApp> {
       if (settings.containsKey('theme')) {
         _themeStr = settings['theme'];
       }
-      if (settings.containsKey('primaryColor')) {
+      if (settings.containsKey('primaryColor') &&
+          settings['primaryColor'] != null) {
         try {
           _seedColor = Color(settings['primaryColor']);
         } catch (_) {
-          _seedColor = Colors.indigo;
+          _seedColor = null;
         }
+      } else {
+        _seedColor = null;
       }
     });
+  }
+
+  ColorScheme _makeLightScheme(Color? dynamicPrimary) {
+    if (_useDynamicColor && dynamicPrimary != null) {
+      // Dynamic mode: use wallpaper primary as seed → good surface contrast
+      return ColorScheme.fromSeed(
+        seedColor: dynamicPrimary,
+        brightness: Brightness.light,
+      );
+    }
+    // Preset or fallback
+    return ColorScheme.fromSeed(
+      seedColor: _seedColor ?? Colors.indigo,
+      brightness: Brightness.light,
+    );
+  }
+
+  ColorScheme _makeDarkScheme(Color? dynamicPrimary) {
+    if (_themeStr == 'amoled') {
+      final base = (_useDynamicColor && dynamicPrimary != null)
+          ? ColorScheme.fromSeed(
+              seedColor: dynamicPrimary,
+              brightness: Brightness.dark,
+            )
+          : ColorScheme.fromSeed(
+              seedColor: _seedColor ?? Colors.indigo,
+              brightness: Brightness.dark,
+            );
+      return base.copyWith(
+        surface: Colors.black,
+        surfaceDim: Colors.black,
+        surfaceBright: const Color(0xFF1a1a1a),
+        surfaceContainerLowest: Colors.black,
+        surfaceContainerLow: const Color(0xFF0d0d0d),
+        surfaceContainer: const Color(0xFF141414),
+        surfaceContainerHigh: const Color(0xFF1e1e1e),
+        surfaceContainerHighest: const Color(0xFF282828),
+      );
+    }
+    if (_useDynamicColor && dynamicPrimary != null) {
+      return ColorScheme.fromSeed(
+        seedColor: dynamicPrimary,
+        brightness: Brightness.dark,
+      );
+    }
+    return ColorScheme.fromSeed(
+      seedColor: _seedColor ?? Colors.indigo,
+      brightness: Brightness.dark,
+    );
   }
 
   @override
@@ -63,57 +117,42 @@ class _MyAppState extends State<MyApp> {
             ? ThemeMode.dark
             : ThemeMode.system;
 
-    final theme = ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: _seedColor),
-      useMaterial3: true,
-      cardTheme: CardThemeData(
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-      ),
-    );
+    return DynamicColorBuilder(
+      builder: (lightDynamic, darkDynamic) {
+        final lightScheme = _makeLightScheme(lightDynamic?.primary);
+        final darkScheme = _makeDarkScheme(darkDynamic?.primary);
 
-    ColorScheme darkScheme;
-    if (_themeStr == 'amoled') {
-      final base = ColorScheme.fromSeed(
-        seedColor: _seedColor,
-        brightness: Brightness.dark,
-      );
-      darkScheme = base.copyWith(
-        surface: Colors.black,
-        surfaceDim: Colors.black,
-        surfaceBright: const Color(0xFF1a1a1a),
-        surfaceContainerLowest: Colors.black,
-        surfaceContainerLow: const Color(0xFF0d0d0d),
-        surfaceContainer: const Color(0xFF141414),
-        surfaceContainerHigh: const Color(0xFF1e1e1e),
-        surfaceContainerHighest: const Color(0xFF282828),
-      );
-    } else {
-      darkScheme = ColorScheme.fromSeed(
-        seedColor: _seedColor,
-        brightness: Brightness.dark,
-      );
-    }
-    final dark = ThemeData(
-      colorScheme: darkScheme,
-      useMaterial3: true,
-      cardTheme: CardThemeData(
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-      ),
-    );
+        final theme = ThemeData(
+          colorScheme: lightScheme,
+          useMaterial3: true,
+          cardTheme: CardThemeData(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+          ),
+        );
 
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Syllogos',
-      theme: theme,
-      darkTheme: dark,
-      themeMode: themeMode,
-      home: const HomePage(),
+        final dark = ThemeData(
+          colorScheme: darkScheme,
+          useMaterial3: true,
+          cardTheme: CardThemeData(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+          ),
+        );
+
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: 'Syllogos',
+          theme: theme,
+          darkTheme: dark,
+          themeMode: themeMode,
+          home: const HomePage(),
+        );
+      },
     );
   }
 }

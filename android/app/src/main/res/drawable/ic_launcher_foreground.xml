@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Main ribbon -->
+    <path
+        android:fillColor="@color/ic_launcher_foreground"
+        android:pathData="
+            M67.5,38.25
+            C63,35.25 57.75,33.75 52.5,34.5
+            C45.75,35.25 41.25,39.75 41.25,46.5
+            C41.25,50.25 42.75,53.25 46.5,55.5
+            C50.25,57.75 54.75,58.5 59.25,59.25
+
+            C63.75,60 66.75,61.5 66.75,65.25
+
+            C66.75,69.75 63,72.75 57.75,73.5
+            C52.5,74.25 47.25,72.75 43.5,69
+
+            L39.75,74.25
+
+            C45,78.75 52.5,80.25 60,79.5
+            C70.5,78 76.5,72 76.5,63
+
+            C76.5,54 70.5,49.5 61.5,48.75
+
+            C54.75,48 52.5,45.75 52.5,42.75
+
+            C52.5,39.75 55.5,37.5 60,36.75
+            C64.5,36 68.25,37.5 71.25,40.5
+
+            Z" />
+
+    <!-- Folded section -->
+    <path
+        android:pathData="
+            M59.25,48.75
+            C63.75,49.5 67.5,51 70.5,54
+            L74.25,50.25
+
+            C69.75,46.5 64.5,44.25 60,43.5
+            Z"
+        android:fillColor="@color/ic_launcher_foreground"
+        android:alpha="0.25" />
+
+    <!-- Sparkle -->
+    <path
+        android:pathData="
+            M73.5,27
+            L75.75,33.75
+            L82.5,36
+            L75.75,38.25
+            L73.5,45
+            L71.25,38.25
+            L64.5,36
+            L71.25,33.75
+            Z"
+        android:fillColor="#FFC107" />
+
+</vector>

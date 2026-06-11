@@ -77,4 +77,5 @@ secrets.json
 # Local database files (Hive)
 *.hive
 *.lock
-
+.claude/
+icon-design/res
